@@ -185,7 +185,15 @@ def _m_step(
     if not symmetric:
         counts = np.einsum("na,nk,nl->akl", annotator_onehot, item_posteriors, label_onehot)
         counts += smoothing
-        confusion: FloatArray = counts / counts.sum(axis=2, keepdims=True)
+        # A true class with no posterior mass (possible at smoothing 0) gets a
+        # uniform row instead of 0/0.
+        row_totals = counts.sum(axis=2, keepdims=True)
+        confusion: FloatArray = np.divide(
+            counts,
+            row_totals,
+            out=np.full_like(counts, 1.0 / n_classes),
+            where=row_totals > 0,
+        )
         return confusion, np.log(np.maximum(confusion, tiny))
     correct = annotator_onehot.T @ np.sum(item_posteriors * label_onehot, axis=1)
     total = annotator_onehot.sum(axis=0) + 2.0 * smoothing

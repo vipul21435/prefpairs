@@ -238,7 +238,12 @@ def preference_graphs(
     kinds = set(pair_kinds)
 
     def node(response_id: str) -> str:
-        return response_models[response_id] if response_models is not None else response_id
+        if response_models is None:
+            return response_id
+        if response_id not in response_models:
+            msg = f"model level needs the model of every response; {response_id!r} has none"
+            raise ValueError(msg)
+        return response_models[response_id]
 
     net: dict[str, Counter[tuple[str, str]]] = defaultdict(Counter)
     for judgment in judgments:

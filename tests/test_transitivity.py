@@ -187,3 +187,14 @@ class TestTransitivityReport:
             elif archetypes[result.annotator_id] is not Archetype.NOISY:
                 # Consistent preferences, right or wrong, are far from random.
                 assert result.p_value < 0.05
+
+
+def test_transitivity_without_responses_raises_the_documented_error() -> None:
+    with pytest.raises(ValueError, match="model of every response"):
+        transitivity([judgment("x", "p1-a", "p1-b", "left")])
+
+
+def test_transitivity_with_a_missing_response_model_raises_the_documented_error() -> None:
+    js = [judgment("x", "p1-a", "p1-b", "left")]
+    with pytest.raises(ValueError, match="'p1-b' has none"):
+        preference_graphs(js, level=Level.MODEL, response_models={"p1-a": "m1"})

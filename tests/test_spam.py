@@ -179,3 +179,11 @@ class TestAnnotatorReliability:
         assert report.n_labels == 3
         assert report.spammers == ()
         assert report.reversed == ()
+
+
+def test_full_confusion_at_zero_smoothing_stays_finite_on_one_class_data() -> None:
+    fit = dawid_skene([0, 1], [0, 0], [0, 0], n_items=2, n_annotators=1, n_classes=2, smoothing=0.0)
+    assert np.all(np.isfinite(fit.confusion))
+    assert np.all(np.isfinite(fit.posteriors))
+    assert fit.converged
+    assert fit.posteriors[:, 0].tolist() == [1.0, 1.0]
