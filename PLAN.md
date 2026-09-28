@@ -109,7 +109,7 @@ Delivered (decisions taken while building it):
 - Added `prefpairs dump` (canonical JSONL) and `summary.py` for `stats`, beyond
   the four planned commands, so round trips can be checked from the CLI.
 
-### Slice 2: Aggregation with Bradley-Terry, Elo, bootstrap CIs and win-rate matrix
+### Slice 2: Aggregation with Bradley-Terry, Elo, bootstrap CIs and win-rate matrix [x] done
 
 Goal: turn judgments into a ranking with honest uncertainty: fit Bradley-Terry with the MM algorithm in numpy (ties as half wins, pseudo-count prior for identifiability), compute Elo averaged over seeded permutations, attach cluster-bootstrap confidence intervals, and report empirical and model-implied win-rate matrices, proven on simulated data to recover the true ordering.
 
@@ -126,6 +126,19 @@ Commits:
 4. `feat(cli)`: `prefpairs rank` (text table and `--json`); recovery test on
    simulated data: Kendall tau against true strengths above a fixed threshold and
    true strengths inside the 95% CIs for most items.
+
+Delivered (decisions taken while building it):
+
+- The bootstrap refits Bradley-Terry for many replicates at once (batched MM
+  over `(B, n, n)` count arrays, chunked to bound memory) and reports how many
+  replicates hit the iteration cap instead of hiding it.
+- Intervals are reported for ranks as well as values (percentile interval of
+  each replicate's competition rank), so close items show overlapping ranks.
+- `rank` scores the estimated order against the truth with Kendall's tau when
+  the database holds a simulation truth or `--truth FILE` is given; on the
+  seed-0 simulation both Bradley-Terry and Elo reach tau 1.0.
+- Known limitation: response-level ranking uses dense per-replicate matrices
+  and is slow for hundreds of responses; a sparse fit belongs in slice 8.
 
 ### Slice 3: Annotator bias and agreement checks
 
@@ -196,7 +209,7 @@ Commits:
 4. `feat(cli)`: `prefpairs export --format dpo|kto|rm`; golden-file tests on a
    small fixed simulated dataset.
 
-### Slice 7: Docker, compose and end-to-end `make demo`
+### Slice 7: Docker, compose and end-to-end `make demo` [~] partly done
 
 Goal: make the whole pipeline runnable in one command: a slim multi-stage Dockerfile on a digest-pinned Python 3.12 base (non-root user, labelled `project=prefpairs`), a compose file with the web UI and a one-shot pipeline service, and a `make demo` that runs simulate, audit, rank and export end to end and checks its outputs, verified from a fresh clone.
 
@@ -208,6 +221,13 @@ Commits:
 3. `feat(demo)`: `scripts/demo.sh` plus `make demo` and `make docker-demo` that
    run the full pipeline on a seeded dataset and assert expected artifacts exist.
 4. `ci`: CI job that builds the image and runs the containerised demo.
+
+Delivered early (to make the repository runnable before the audit and export
+slices): the digest-pinned multi-stage Dockerfile with uv and a non-root user,
+`.dockerignore`, `make docker`, `scripts/demo.sh` with `make demo` and
+`make docker-demo` on a bundled seed-0 sample, and a CI job that builds the
+image and runs the demo in it. Still open: the compose file (commit 2), and
+extending the demo to audit and export once those slices exist.
 
 ### Slice 8: Benchmarks and documentation polish
 
