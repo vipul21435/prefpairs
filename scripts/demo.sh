@@ -13,13 +13,14 @@
 #   PREFPAIRS  command that runs the CLI (default: prefpairs)
 #   DEMO_DB    database to (re)create      (default: .prefpairs/demo.db)
 #   EXAMPLES   directory of the sample     (default: examples)
-#   EXPORT_DIR where exports are written    (default: .prefpairs/demo-export)
+#   DEMO_EXPORT_DIR where exports go        (default: .prefpairs/demo-export)
+#   Only its dpo/ kto/ rm/ rerun/ subdirectories are replaced.
 set -eu
 
 PREFPAIRS="${PREFPAIRS:-prefpairs}"
 DB="${DEMO_DB:-.prefpairs/demo.db}"
 EXAMPLES="${EXAMPLES:-examples}"
-EXPORT_DIR="${EXPORT_DIR:-.prefpairs/demo-export}"
+EXPORT_DIR="${DEMO_EXPORT_DIR:-.prefpairs/demo-export}"
 TRUTH="$EXAMPLES/sample-truth.json"
 EXPECT="Kendall tau against the true order: 1.000"
 EXPECT_FLAGS="flagged: ann-10 (position), ann-11 (length)"
@@ -56,7 +57,7 @@ if $PREFPAIRS audit --db "$DB" --strict >/dev/null; then
 fi
 echo "exit code 1 (annotators flagged)"
 
-rm -rf "$EXPORT_DIR"
+rm -rf "$EXPORT_DIR/dpo" "$EXPORT_DIR/kto" "$EXPORT_DIR/rm" "$EXPORT_DIR/rerun"
 for format in dpo kto rm; do
   step export --format "$format" --out "$EXPORT_DIR"
   $PREFPAIRS export --db "$DB" --format "$format" --out "$EXPORT_DIR"

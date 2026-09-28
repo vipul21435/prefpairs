@@ -26,11 +26,14 @@ def test_bundled_sample_is_exactly_the_seed_0_simulation(tmp_path: Path) -> None
 
 def test_demo_script_runs_end_to_end(tmp_path: Path) -> None:
     cli = Path(sys.executable).parent / "prefpairs"
+    # A file the demo did not write must survive it.
+    (tmp_path / "export").mkdir()
+    (tmp_path / "export" / "keep.txt").write_text("keep\n")
     env = {
         **os.environ,
         "PREFPAIRS": str(cli),
         "DEMO_DB": str(tmp_path / "demo.db"),
-        "EXPORT_DIR": str(tmp_path / "export"),
+        "DEMO_EXPORT_DIR": str(tmp_path / "export"),
     }
     result = subprocess.run(  # noqa: S603
         ["/bin/sh", str(ROOT / "scripts" / "demo.sh")],
@@ -52,6 +55,7 @@ def test_demo_script_runs_end_to_end(tmp_path: Path) -> None:
     assert "rerun: every DPO file and card is byte-identical" in result.stdout
     for fmt in ("dpo", "kto", "rm"):
         assert (tmp_path / "export" / fmt / "card.md").is_file()
+    assert (tmp_path / "export" / "keep.txt").read_text() == "keep\n"
     assert result.stdout.rstrip().endswith(
         "demo OK: both rankings recover the true model order, the audit flags exactly "
         "the planted annotators and the export is reproducible"

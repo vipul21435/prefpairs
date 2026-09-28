@@ -38,7 +38,7 @@ COPY examples /app/examples
 COPY scripts /app/scripts
 ENV PATH=/opt/venv/bin:$PATH \
     DEMO_DB=/data/demo.db \
-    EXPORT_DIR=/data/demo-export \
+    DEMO_EXPORT_DIR=/data/demo-export \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PREFPAIRS_DB=/data/prefpairs.db

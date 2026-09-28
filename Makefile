@@ -30,9 +30,10 @@ cov: ## Run tests with branch coverage (fails under 85%)
 check: lint typecheck cov ## Everything CI runs
 
 DEMO_DB ?= .prefpairs/demo.db
+DEMO_EXPORT_DIR ?= .prefpairs/demo-export
 
 demo: ## End to end on the bundled sample: import, stats, rank with CIs, check recovery
-	PREFPAIRS="$(UV) run prefpairs" DEMO_DB=$(DEMO_DB) sh scripts/demo.sh
+	PREFPAIRS="$(UV) run prefpairs" DEMO_DB=$(DEMO_DB) DEMO_EXPORT_DIR=$(DEMO_EXPORT_DIR) sh scripts/demo.sh
 
 IMAGE ?= prefpairs:local
 
