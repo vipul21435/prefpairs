@@ -11,8 +11,24 @@ import typer
 from pydantic import ValidationError
 
 from prefpairs import __version__
+from prefpairs.aggregate import (
+    BootstrapConfig,
+    BradleyTerryConfig,
+    ComparisonOptions,
+    Level,
+    NotIdentifiableError,
+    ResampleUnit,
+)
 from prefpairs.jsonl import JsonlError, read_records, write_records
-from prefpairs.simulate import Archetype, SimulationConfig, SimulationError, write_simulation
+from prefpairs.ranking import Method, NothingToRankError, rank_store, render_rank_report
+from prefpairs.simulate import (
+    Archetype,
+    SimulationConfig,
+    SimulationError,
+    SimulationTruth,
+    load_truth,
+    write_simulation,
+)
 from prefpairs.simulate import simulate as run_simulation
 from prefpairs.store import Store, StoreError
 from prefpairs.summary import render_summary, summarise
@@ -64,7 +80,14 @@ def _reported_errors() -> Iterator[None]:
     """Turn expected failures into a one-line message and exit code 1."""
     try:
         yield
-    except (StoreError, JsonlError, SimulationError, ValidationError) as exc:
+    except (
+        StoreError,
+        JsonlError,
+        SimulationError,
+        ValidationError,
+        NotIdentifiableError,
+        NothingToRankError,
+    ) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
@@ -200,3 +223,76 @@ def dump(
     with out.open("w", encoding="utf-8", newline="\n") as handle:
         count = write_records(records, handle)
     typer.echo(f"wrote {count} records to {out}")
+
+
+@app.command()
+def rank(
+    *,
+    db: DbOption = DEFAULT_DB,
+    method: Annotated[
+        Method, typer.Option(help="bt: Bradley-Terry (MM fit); elo: permutation-averaged Elo.")
+    ] = Method.BRADLEY_TERRY,
+    level: Annotated[Level, typer.Option(help="Rank models or individual responses.")] = (
+        Level.MODEL
+    ),
+    replicates: Annotated[
+        int, typer.Option(min=10, max=100_000, help="Bootstrap replicates.")
+    ] = 500,
+    resample: Annotated[
+        ResampleUnit,
+        typer.Option(help="Resample whole prompts (cluster bootstrap) or single judgments."),
+    ] = ResampleUnit.PROMPT,
+    confidence: Annotated[
+        float, typer.Option(min=0.5, max=0.999, help="Interval coverage level.")
+    ] = 0.95,
+    seed: Annotated[int, typer.Option(min=0, help="Bootstrap seed.")] = 0,
+    prior: Annotated[
+        float, typer.Option(min=0.0, help="Bradley-Terry pseudo-count prior (0 = plain MLE).")
+    ] = 0.1,
+    exclude_annotator: Annotated[
+        list[str] | None,
+        typer.Option("--exclude-annotator", "-x", help="Leave out this annotator (repeatable)."),
+    ] = None,
+    include_ranked: Annotated[
+        bool, typer.Option(help="Also expand ranked judgments into implied pairs.")
+    ] = False,
+    truth: Annotated[
+        Path | None,
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            help="Ground-truth JSON from `simulate --truth-out` (default: the one stored).",
+        ),
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Print JSON instead of text.")] = False,
+) -> None:
+    """Rank models or responses with bootstrap confidence intervals."""
+    with _reported_errors():
+        options = ComparisonOptions(
+            level=level,
+            exclude_annotators=tuple(exclude_annotator or ()),
+            include_ranked=include_ranked,
+        )
+        bootstrap = BootstrapConfig(
+            n_replicates=replicates, unit=resample, level=confidence, seed=seed
+        )
+        known = (
+            SimulationTruth.model_validate_json(truth.read_text(encoding="utf-8"))
+            if truth is not None
+            else None
+        )
+        with Store.open(db, create=False) as store:
+            if known is None:
+                known = load_truth(store)
+            report = rank_store(
+                store,
+                method=method,
+                options=options,
+                bootstrap=bootstrap,
+                bt_config=BradleyTerryConfig(prior=prior),
+                truth=known,
+            )
+    if as_json:
+        typer.echo(json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True))
+    else:
+        typer.echo(render_rank_report(report))
