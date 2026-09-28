@@ -87,6 +87,26 @@ def test_json_output_records_config_and_flags(sample_db: Path) -> None:
     assert by_id["ann-01"]["planted"] is None
 
 
+def test_alpha_confidence_and_spammer_score_options_reach_every_check(sample_db: Path) -> None:
+    args = ["audit", "--db", str(sample_db), "--json", "--alpha", "0.01"]
+    args += ["--confidence", "0.9", "--min-spammer-score", "0.5"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    config = data["config"]
+    assert (config["alpha"], config["confidence"], config["min_spammer_score"]) == (0.01, 0.9, 0.5)
+    assert data["gold"]["confidence"] == 0.9
+    assert data["reliability"]["min_spammer_score"] == 0.5
+    checks = data["checks"]
+    assert (checks["alpha"], checks["confidence"]) == (0.01, 0.9)
+    for name in ("position", "consistency", "length"):
+        assert (checks[name]["alpha"], checks[name]["confidence"]) == (0.01, 0.9)
+    # A stricter spammer threshold flags two annotators the default leaves alone.
+    by_id = {a["annotator_id"]: a for a in data["annotators"]}
+    assert "spammer" in by_id["ann-02"]["flags"]
+    assert "spammer" in by_id["ann-07"]["flags"]
+
+
 def test_missing_database_is_an_error(tmp_path: Path) -> None:
     result = runner.invoke(app, ["audit", "--db", str(tmp_path / "absent.db")])
     assert result.exit_code == 1

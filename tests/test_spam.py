@@ -172,6 +172,20 @@ class TestAnnotatorReliability:
                 assert result.spammer_score > 0.4
             assert result.sensitivity == result.specificity
 
+    @pytest.mark.parametrize("seed", [2, 4])
+    def test_spammer_below_half_accuracy_is_not_reported_as_reversed(self, seed: int) -> None:
+        # At these seeds the planted random spammer's accuracy falls below 0.5,
+        # so only the spammer-score gate keeps it out of the reversed verdict.
+        dataset = simulate(SimulationConfig(seed=seed))
+        report = annotator_reliability(dataset.pairwise)
+        archetypes = dataset.truth.annotator_archetypes
+        (spammer,) = [a for a, kind in archetypes.items() if kind is Archetype.RANDOM_SPAMMER]
+        result = next(r for r in report.results if r.annotator_id == spammer)
+        assert result.accuracy < 0.5
+        assert result.spammer
+        assert not result.reversed
+        assert [archetypes[a] for a in report.reversed] == [Archetype.ADVERSARIAL]
+
     def test_too_few_labels_are_never_flagged(self) -> None:
         judgments = [judgment(a, "p1-a", "p1-b", "left") for a in ("x", "y", "z")]
         report = annotator_reliability(judgments, min_labels=2, symmetric=False)
