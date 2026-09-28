@@ -42,6 +42,15 @@ app = typer.Typer(
 
 DEFAULT_DB = Path(".prefpairs/prefpairs.db")
 
+STAGES = (
+    ("store", "available: init, import, dump, stats"),
+    ("simulate", "available: simulate"),
+    ("aggregate", "available: rank"),
+    ("audit", "planned"),
+    ("collect", "planned"),
+    ("export", "planned"),
+)
+
 DbOption = Annotated[
     Path,
     typer.Option(
@@ -108,10 +117,10 @@ def _parse_roster(spec: str) -> dict[Archetype, int]:
 
 @app.command()
 def info() -> None:
-    """Print the toolkit version and the pipeline stages it provides."""
+    """Print the toolkit version and which pipeline stages are available yet."""
     typer.echo(f"prefpairs {__version__}")
-    for stage in ("collect", "audit", "aggregate", "export"):
-        typer.echo(f"  - {stage}")
+    for stage, status in STAGES:
+        typer.echo(f"  - {stage:<10} {status}")
 
 
 @app.command()

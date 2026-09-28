@@ -36,8 +36,12 @@ def test_no_args_shows_help() -> None:
 def test_info_lists_pipeline_stages() -> None:
     result = runner.invoke(app, ["info"])
     assert result.exit_code == 0
-    for stage in ("collect", "audit", "aggregate", "export"):
-        assert f"- {stage}" in result.stdout
+    lines = result.stdout.splitlines()
+    assert lines[0] == f"prefpairs {__version__}"
+    status = dict(line.split(maxsplit=2)[1:] for line in lines[1:])
+    assert status["aggregate"] == "available: rank"
+    for stage in ("collect", "audit", "export"):
+        assert status[stage] == "planned"
 
 
 class TestInit:
