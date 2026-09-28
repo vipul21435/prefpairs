@@ -1,0 +1,17 @@
+# Only pyproject.toml, uv.lock, README.md, LICENSE, src/ and examples/ are needed.
+.git
+.github
+.venv
+.prefpairs
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+coverage.xml
+htmlcov
+**/__pycache__
+*.db
+tests
+Dockerfile
+.dockerignore
+.env

@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 UV ?= uv
 
-.PHONY: help install lint format typecheck test cov check demo clean
+.PHONY: help install lint format typecheck test cov check demo docker docker-run clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -35,6 +35,15 @@ demo: ## Simulate a seeded dataset with known ground truth and summarise it
 	rm -f $(DEMO_DB)
 	$(UV) run prefpairs simulate --seed 0 --db $(DEMO_DB)
 	$(UV) run prefpairs stats --db $(DEMO_DB)
+
+IMAGE ?= prefpairs:local
+
+docker: ## Build the CLI image (label project=prefpairs) and prune dangling layers
+	docker build -t $(IMAGE) .
+	docker image prune -f --filter label=project=prefpairs
+
+docker-run: ## Run the CLI in the image, e.g. make docker-run ARGS="simulate --seed 0"
+	docker run --rm $(IMAGE) $(ARGS)
 
 clean: ## Remove caches and build output
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage coverage.xml htmlcov dist build

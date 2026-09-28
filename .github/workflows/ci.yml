@@ -49,3 +49,18 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: ignore
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the CLI image
+        run: docker build -t prefpairs:ci .
+
+      - name: Smoke-test the image as its non-root user
+        run: |
+          docker run --rm prefpairs:ci --version
+          docker run --rm prefpairs:ci simulate --seed 0
