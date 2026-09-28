@@ -1,5 +1,7 @@
 """Turn judgments into training data: vote aggregation and auditable filters."""
 
+from prefpairs.export.card import DatasetCard, build_card, card_json, card_markdown
+from prefpairs.export.run import export_dataset
 from prefpairs.export.votes import (
     DropReason,
     FilterConfig,
@@ -22,6 +24,7 @@ from prefpairs.export.writers import (
 
 __all__ = [
     "SPLITS",
+    "DatasetCard",
     "DropReason",
     "ExportFormat",
     "FilterConfig",
@@ -31,7 +34,11 @@ __all__ = [
     "SplitConfig",
     "WrittenFile",
     "aggregate_votes",
+    "build_card",
     "build_rows",
+    "card_json",
+    "card_markdown",
+    "export_dataset",
     "select_pairs",
     "split_of",
     "to_jsonl",
