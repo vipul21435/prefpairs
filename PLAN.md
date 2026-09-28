@@ -65,7 +65,7 @@ src/prefpairs/
 
 ## Slices
 
-### Slice 1: Data model, SQLite store and synthetic ground-truth generator
+### Slice 1: Data model, SQLite store and synthetic ground-truth generator [x] done
 
 Goal: define the pydantic schema for prompts, candidate responses with model and provenance metadata, pairwise and ranked judgments, rationales and annotator sessions; persist it in SQLite with versioned migrations and JSONL import; and add a seeded simulator that produces responses with known latent quality and annotators with known noise and bias, so every later slice can be tested against ground truth.
 
@@ -86,6 +86,28 @@ Commits:
 Acceptance: `prefpairs simulate --seed 0 --db x.db` then `prefpairs stats --db x.db`
 prints counts; two runs with the same seed produce identical databases (row dump
 compared in a test).
+
+Delivered (decisions taken while building it):
+
+- JSONL lines are tagged with `type`, not `kind`, because `Annotator.kind`
+  (human or simulated) is a real field; a test guards that no record ever has a
+  field named `type`.
+- Integrity lives in SQLite as well as pydantic: composite foreign keys tie a
+  judgment's responses to its prompt and its session to its annotator, a
+  trigger requires a control to repeat an earlier judgment of the same annotator
+  on the same pair, judgments are append-only, and the file carries
+  `PRAGMA application_id` so foreign SQLite files are never migrated.
+- Import sorts records into dependency order (a control after the judgment it
+  repeats, even in chains) and is idempotent; a conflicting id aborts the batch.
+- Per-model verbosity is constructed to have an exact correlation with the true
+  strengths (`length_quality_corr`, default 0). With six models, freely drawn
+  offsets correlated with strength by chance (seed 0 made reliable annotators
+  look anti-length), which would have made slice 3's length-bias check flag
+  honest annotators.
+- A database holds at most one simulated ground truth (migration 2,
+  `simulation_truth`); rewriting the same simulation is a no-op.
+- Added `prefpairs dump` (canonical JSONL) and `summary.py` for `stats`, beyond
+  the four planned commands, so round trips can be checked from the CLI.
 
 ### Slice 2: Aggregation with Bradley-Terry, Elo, bootstrap CIs and win-rate matrix
 

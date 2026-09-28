@@ -307,10 +307,14 @@ class Store:
             file.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(target, isolation_level=None)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
         store = cls(conn, target)
         try:
+            conn.execute("PRAGMA foreign_keys = ON")
             store.migrate(migrations)
+        except sqlite3.DatabaseError as exc:
+            conn.close()
+            msg = f"cannot open {target}: {exc}"
+            raise StoreError(msg) from exc
         except BaseException:
             conn.close()
             raise

@@ -29,8 +29,12 @@ cov: ## Run tests with branch coverage (fails under 85%)
 
 check: lint typecheck cov ## Everything CI runs
 
-demo: ## End-to-end demo of the CLI
-	$(UV) run prefpairs info
+DEMO_DB ?= .prefpairs/demo.db
+
+demo: ## Simulate a seeded dataset with known ground truth and summarise it
+	rm -f $(DEMO_DB)
+	$(UV) run prefpairs simulate --seed 0 --db $(DEMO_DB)
+	$(UV) run prefpairs stats --db $(DEMO_DB)
 
 clean: ## Remove caches and build output
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage coverage.xml htmlcov dist build
