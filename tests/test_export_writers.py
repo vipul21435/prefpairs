@@ -112,10 +112,10 @@ def test_no_prompt_appears_in_two_splits_and_reruns_are_byte_identical(tmp_path:
 
 
 def test_jsonl_sorts_keys_and_terminates_every_line() -> None:
-    data = to_jsonl([{"b": 1, "a": "é"}, {"z": None}])
-    assert data == '{"a": "é", "b": 1}\n{"z": null}\n'.encode()
+    data = to_jsonl([{"b": 1, "a": "\u00e9"}, {"z": None}])
+    assert data == '{"a": "\u00e9", "b": 1}\n{"z": null}\n'.encode()
     assert [json.loads(line) for line in data.decode().splitlines()] == [
-        {"a": "é", "b": 1},
+        {"a": "\u00e9", "b": 1},
         {"z": None},
     ]
     assert to_jsonl([]) == b""

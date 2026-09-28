@@ -145,8 +145,8 @@ def cjk_response(response_id: str, text: str, model: str) -> Response:
 
 
 CJK = [
-    cjk_response("long", "这是一个很长的回答" * 20, "model-a"),
-    cjk_response("short", "是的对的。", "model-b"),
+    cjk_response("long", "\u8fd9\u662f\u4e00\u4e2a\u5f88\u957f\u7684\u56de\u7b54" * 20, "model-a"),
+    cjk_response("short", "\u662f\u7684\u5bf9\u7684\u3002", "model-b"),
 ]
 
 
