@@ -14,6 +14,17 @@ from prefpairs.quality.consistency import ConsistencyReport, ConsistencyResult, 
 from prefpairs.quality.length import LengthBiasReport, LengthBiasResult, length_bias
 from prefpairs.quality.logistic import LogisticFit, fit_logistic, likelihood_ratio
 from prefpairs.quality.position import PositionBiasReport, PositionBiasResult, position_bias
+from prefpairs.quality.spam import (
+    AnnotatorReliability,
+    DawidSkeneFit,
+    DawidSkeneReport,
+    GoldAccuracy,
+    GoldReport,
+    annotator_reliability,
+    dawid_skene,
+    gold_accuracy,
+    spammer_score,
+)
 from prefpairs.quality.stats import binom_test, holm, wilson_interval
 from prefpairs.quality.transitivity import (
     TransitivityReport,
@@ -26,9 +37,14 @@ from prefpairs.quality.transitivity import (
 __all__ = [
     "AgreementReport",
     "AnnotatorAgreement",
+    "AnnotatorReliability",
     "ConsistencyReport",
     "ConsistencyResult",
+    "DawidSkeneFit",
+    "DawidSkeneReport",
     "FleissAgreement",
+    "GoldAccuracy",
+    "GoldReport",
     "Kappa",
     "LengthBiasReport",
     "LengthBiasResult",
@@ -39,16 +55,20 @@ __all__ = [
     "TransitivityReport",
     "TransitivityResult",
     "agreement",
+    "annotator_reliability",
     "binom_test",
     "cohen_kappa",
     "count_cycles",
+    "dawid_skene",
     "fit_logistic",
     "fleiss_kappa",
+    "gold_accuracy",
     "holm",
     "length_bias",
     "likelihood_ratio",
     "position_bias",
     "self_consistency",
+    "spammer_score",
     "strongly_connected_components",
     "transitivity",
     "wilson_interval",
