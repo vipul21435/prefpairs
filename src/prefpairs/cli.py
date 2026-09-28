@@ -439,7 +439,15 @@ def export(
             train=train, validation=validation, test=round(1.0 - train - validation, 12), salt=salt
         )
         with Store.open(db, create=False) as store:
+            judgments = store.pairwise()
             excluded = set(exclude_annotator or ())
+            unknown = sorted(excluded - {j.annotator_id for j in judgments})
+            if unknown:
+                typer.echo(
+                    f"error: no judgments from annotator(s) given with -x: {', '.join(unknown)}",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
             flagged: tuple[str, ...] = ()
             if audit:
                 flagged = run_audit(store, AuditConfig()).flagged
@@ -460,7 +468,7 @@ def export(
             card = export_dataset(
                 out,
                 fmt,
-                judgments=store.pairwise(),
+                judgments=judgments,
                 prompts=store.prompts(),
                 responses=store.responses(),
                 filters=filters,

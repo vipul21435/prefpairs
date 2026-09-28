@@ -68,6 +68,14 @@ def test_audit_and_given_exclusions_are_both_recorded(sample_db: Path, tmp_path:
     assert card["exclusion_reason"].endswith("; given with -x: ann-01")
 
 
+def test_unknown_excluded_annotator_is_an_error(sample_db: Path, tmp_path: Path) -> None:
+    args = ["export", "--db", str(sample_db), "--out", str(tmp_path), "-x", "ann-l", "--no-audit"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 1
+    assert "no judgments from annotator(s) given with -x: ann-l" in result.output
+    assert not (tmp_path / "dpo").exists()
+
+
 def test_bad_split_fractions_are_an_error(sample_db: Path, tmp_path: Path) -> None:
     result = runner.invoke(
         app,
