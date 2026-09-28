@@ -43,3 +43,67 @@ dev = [
     "pytest-cov>=6.0",
     "ruff>=0.8",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "C4", "RUF", "N", "PT", "RET", "PL", "S", "TID", "PTH",
+    "NPY",
+]
+ignore = [
+    "PLR0913", # CLI commands and model constructors legitimately take many arguments
+    "PLR2004", # magic values are fine in comparisons against statistical constants
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004", "S311"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.pep8-naming]
+# Matrix names such as W (win counts) and X (design matrix) follow statistics notation.
+ignore-names = ["W", "X", "N", "K", "P", "T"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src"]
+warn_unreachable = true
+pretty = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = [
+    "slow: statistical recovery tests that fit many bootstrap replicates",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["prefpairs"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 85
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]
