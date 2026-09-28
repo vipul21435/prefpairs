@@ -114,7 +114,7 @@ def _reasons(report: AuditReport) -> dict[str, dict[str, str]]:
                 r.annotator_id,
                 "length",
                 f"length slope {r.coefficient:+.2f} log-odds per unit "
-                f"log word ratio, p adj {_p(r.p_adjusted)}",
+                f"log {checks.length.unit.value[:-1]} ratio, p adj {_p(r.p_adjusted)}",
             )
             for r in checks.length.results
             if r.flagged

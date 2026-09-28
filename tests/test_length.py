@@ -2,7 +2,7 @@
 
 import pytest
 
-from prefpairs.quality import length_bias
+from prefpairs.quality import LengthUnit, length_bias
 from prefpairs.quality.length import consensus_strengths
 from prefpairs.schema import PairKind, PairwiseJudgment, Provenance, Response
 from prefpairs.simulate import Archetype, SimulationConfig, simulate
@@ -138,3 +138,44 @@ def test_untestable_annotators_do_not_join_the_holm_family() -> None:
     assert crowded.flagged == ("ann-x",)
     small = [r for a, r in rows.items() if a != "ann-x"]
     assert all(r.coefficient is None and r.p_adjusted == 1.0 for r in small)
+
+
+def cjk_response(response_id: str, text: str, model: str) -> Response:
+    return Response(id=response_id, prompt_id="p1", model=model, text=text, provenance=PROVENANCE)
+
+
+CJK = [
+    cjk_response("long", "这是一个很长的回答" * 20, "model-a"),
+    cjk_response("short", "是的对的。", "model-b"),
+]
+
+
+def test_text_without_spaces_falls_back_to_characters() -> None:
+    assert [r.n_words for r in CJK] == [1, 1]
+    report = length_bias(longer_wins("ann-1", 60), CJK, adjust_for_quality=False)
+    assert report.unit is LengthUnit.CHARS
+    (row,) = report.results
+    assert row.n_equal_length == 0
+    assert row.n_longer_chosen == 60
+    assert row.coefficient is not None
+    assert row.coefficient > 0
+    assert row.flagged
+
+
+def test_explicit_word_unit_reproduces_the_blind_spot() -> None:
+    report = length_bias(
+        longer_wins("ann-1", 60), CJK, adjust_for_quality=False, unit=LengthUnit.WORDS
+    )
+    assert report.unit is LengthUnit.WORDS
+    (row,) = report.results
+    assert (row.coefficient, row.n_equal_length, row.flagged) == (None, 60, False)
+
+
+def test_spaced_text_keeps_counting_words() -> None:
+    report = length_bias(longer_wins("ann-1", 30), RESPONSES, adjust_for_quality=False)
+    assert report.unit is LengthUnit.WORDS
+    chars = length_bias(
+        longer_wins("ann-1", 30), RESPONSES, adjust_for_quality=False, unit=LengthUnit.CHARS
+    )
+    assert chars.unit is LengthUnit.CHARS
+    assert chars.results[0].flagged

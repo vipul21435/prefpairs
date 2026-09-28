@@ -11,7 +11,7 @@ from prefpairs.quality.agreement import (
     fleiss_kappa,
 )
 from prefpairs.quality.consistency import ConsistencyReport, ConsistencyResult, self_consistency
-from prefpairs.quality.length import LengthBiasReport, LengthBiasResult, length_bias
+from prefpairs.quality.length import LengthBiasReport, LengthBiasResult, LengthUnit, length_bias
 from prefpairs.quality.logistic import LogisticFit, fit_logistic, likelihood_ratio
 from prefpairs.quality.position import PositionBiasReport, PositionBiasResult, position_bias
 from prefpairs.quality.spam import (
@@ -48,6 +48,7 @@ __all__ = [
     "Kappa",
     "LengthBiasReport",
     "LengthBiasResult",
+    "LengthUnit",
     "LogisticFit",
     "PairAgreement",
     "PositionBiasReport",

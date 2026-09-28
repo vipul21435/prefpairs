@@ -17,6 +17,14 @@ real data longer answers are often genuinely better; without this covariate a
 careful annotator who rewards quality would look length-biased. The adjustment
 can be turned off (``adjust_for_quality=False``) to fit choice on length alone.
 
+Length is counted in whitespace-separated words by default. Scripts written
+without spaces between words (Chinese, Japanese, Thai) make a whole response
+one "word", so every pair would look equal-length and the check could never
+run. With ``unit="auto"`` (the default) the check therefore measures length in
+characters when words cannot tell most pairs apart: when more decisive pairs
+tie on words but differ in characters than differ in words. The unit used is
+recorded on the report.
+
 The test of ``b_len = 0`` is a likelihood-ratio test (robust to separation,
 where the Wald test breaks down), adjusted across annotators with
 Holm-Bonferroni. A pooled fit over every annotator is reported too.
@@ -26,6 +34,7 @@ import math
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 
 import numpy as np
 from pydantic import Field
@@ -46,6 +55,37 @@ INTERCEPT_RIDGE = 1e-8
 SLOPE_RIDGE = 1.0
 """Normal prior with unit variance on the slopes (a slope of 1 is a big effect),
 which keeps sharp annotators' quality coefficients finite (see ``_fit``)."""
+
+
+class LengthUnit(StrEnum):
+    """How response length is counted."""
+
+    AUTO = "auto"
+    """Words, unless words cannot tell most pairs apart (see the module docstring)."""
+    WORDS = "words"
+    CHARS = "chars"
+
+
+def _size(response: Response, unit: LengthUnit) -> int:
+    return max(1, response.n_chars if unit is LengthUnit.CHARS else response.n_words)
+
+
+def resolve_unit(
+    unit: LengthUnit,
+    judgments: Iterable[PairwiseJudgment],
+    responses: Mapping[str, Response],
+) -> LengthUnit:
+    """The concrete unit for ``unit``: characters when ``auto`` and words are uninformative."""
+    if unit is not LengthUnit.AUTO:
+        return unit
+    word_gaps = word_ties_with_char_gap = 0
+    for j in judgments:
+        left, right = responses[j.left_response_id], responses[j.right_response_id]
+        if left.n_words != right.n_words:
+            word_gaps += 1
+        elif left.n_chars != right.n_chars:
+            word_ties_with_char_gap += 1
+    return LengthUnit.CHARS if word_ties_with_char_gap > word_gaps else LengthUnit.WORDS
 
 
 class LengthBiasResult(Record):
@@ -83,6 +123,8 @@ class LengthBiasReport(Record):
     min_decisive: int
     pair_kinds: tuple[PairKind, ...]
     slope_ridge: float
+    unit: LengthUnit
+    """Unit the length ratio was measured in (never ``auto``)."""
     distrusted: tuple[str, ...]
     """Annotators left out of the second-round consensus (flagged in round one)."""
     results: tuple[LengthBiasResult, ...]
@@ -98,6 +140,7 @@ class _FitOptions:
     min_decisive: int
     confidence: float
     slope_ridge: float
+    unit: LengthUnit
 
 
 def consensus_strengths(
@@ -133,7 +176,7 @@ def _fit(
     longer = shorter = equal = 0
     for j in judgments:
         left, right = responses[j.left_response_id], responses[j.right_response_id]
-        ratio = math.log(left.n_words / right.n_words)
+        ratio = math.log(_size(left, options.unit) / _size(right, options.unit))
         picked_left = j.choice is Choice.LEFT
         if ratio == 0.0:
             equal += 1
@@ -232,6 +275,7 @@ def length_bias(
     min_decisive: int = MIN_DECISIVE,
     pair_kinds: Sequence[PairKind] = (PairKind.REGULAR,),
     slope_ridge: float = SLOPE_RIDGE,
+    unit: LengthUnit = LengthUnit.AUTO,
 ) -> LengthBiasReport:
     """Fit the length effect of every annotator and test it.
 
@@ -259,7 +303,9 @@ def length_bias(
     for j in all_judgments:
         if j.pair_kind in kinds and j.choice in (Choice.LEFT, Choice.RIGHT):
             decisive[j.annotator_id].append(j)
-    options = _FitOptions(min_decisive, confidence, slope_ridge)
+    by_id = {r.id: r for r in response_list}
+    resolved = resolve_unit(unit, (j for rows in decisive.values() for j in rows), by_id)
+    options = _FitOptions(min_decisive, confidence, slope_ridge, resolved)
 
     def one_round(distrusted: frozenset[str]) -> tuple[LengthBiasResult, ...]:
         return _round(
@@ -280,7 +326,7 @@ def length_bias(
     pooled, estimable = _fit(
         None,
         [j for rows in decisive.values() for j in rows],
-        {r.id: r for r in response_list},
+        by_id,
         consensus_strengths(trusted, response_list) if adjust_for_quality else None,
         options,
     )
@@ -292,6 +338,7 @@ def length_bias(
         min_decisive=min_decisive,
         pair_kinds=kinds,
         slope_ridge=slope_ridge,
+        unit=resolved,
         distrusted=tuple(sorted(first_flags)) if adjust_for_quality else (),
         results=results,
         pooled=pooled,

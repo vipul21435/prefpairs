@@ -381,7 +381,11 @@ or without smoothing, for both the one-coin and the full model
   A length-driven annotator pulls verbose models up in that consensus, so the
   fit runs a second round with first-round flags left out of it. The test is a
   likelihood-ratio test, which, unlike the Wald test, stays valid when the data
-  are separated; separation is detected and reported.
+  are separated; separation is detected and reported. Length is counted in
+  words, but when words cannot tell most pairs apart (Chinese, Japanese or
+  Thai text has no spaces, so a whole answer is one "word") the check counts
+  characters instead and records the unit on the report, rather than quietly
+  finding every pair equal-length and flagging no one.
 - **Agreement is on canonical labels.** Kappa compares what a judgment means
   (which response won, on the id-sorted pair), not which side was clicked.
 - **The audit combines independent views.** Gold accuracy uses a dozen
