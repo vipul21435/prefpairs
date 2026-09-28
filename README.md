@@ -166,7 +166,7 @@ laptop, Python 3.12).
 | Ranking recovery on the bundled sample | Kendall tau 1.000 for Bradley-Terry and for Elo | `make demo` |
 | End-to-end demo wall time | about 1.1 s | `time make demo` |
 | One `rank` with 500 bootstrap replicates | about 0.2 s | `time uv run prefpairs rank --db .prefpairs/demo.db` (after `make demo`) |
-| Docker image size | 327 MB | `make docker && docker image ls prefpairs:local` |
+| Docker image size | 327 MB on disk, 71 MB content (compressed) | `make docker && docker image ls prefpairs:local` |
 
 Statistical properties are pinned by tests rather than quoted: the
 Bradley-Terry score equations hold at the solution and the log-likelihood never
