@@ -15,6 +15,13 @@ from prefpairs.quality.length import LengthBiasReport, LengthBiasResult, length_
 from prefpairs.quality.logistic import LogisticFit, fit_logistic, likelihood_ratio
 from prefpairs.quality.position import PositionBiasReport, PositionBiasResult, position_bias
 from prefpairs.quality.stats import binom_test, holm, wilson_interval
+from prefpairs.quality.transitivity import (
+    TransitivityReport,
+    TransitivityResult,
+    count_cycles,
+    strongly_connected_components,
+    transitivity,
+)
 
 __all__ = [
     "AgreementReport",
@@ -29,9 +36,12 @@ __all__ = [
     "PairAgreement",
     "PositionBiasReport",
     "PositionBiasResult",
+    "TransitivityReport",
+    "TransitivityResult",
     "agreement",
     "binom_test",
     "cohen_kappa",
+    "count_cycles",
     "fit_logistic",
     "fleiss_kappa",
     "holm",
@@ -39,5 +49,7 @@ __all__ = [
     "likelihood_ratio",
     "position_bias",
     "self_consistency",
+    "strongly_connected_components",
+    "transitivity",
     "wilson_interval",
 ]
