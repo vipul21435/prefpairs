@@ -192,7 +192,7 @@ Delivered (decisions taken while building it):
   power table in the README. Flags are per check; the combined verdict is
   slice 4.
 
-### Slice 4: Transitivity, spammer detection and the audit report
+### Slice 4: Transitivity, spammer detection and the audit report [x] done
 
 Goal: complete the quality audit with transitivity violations (cycle detection in each annotator's per-prompt preference graph, intransitive-triad rate against the random baseline), spammer detection from gold-pair accuracy and a Dawid-Skene EM over pairwise labels (with a spammer score from the estimated confusion matrices), and a combined per-annotator report with flags, reasons and evidence, exposed as `prefpairs audit`.
 
@@ -209,6 +209,37 @@ Commits:
 4. `feat(cli)`: `prefpairs audit` (exit code 1 when any annotator is flagged
    under `--strict`); end-to-end test on simulated data asserting exactly the
    planted bad annotators are flagged for a fixed seed.
+
+Delivered (decisions taken while building it):
+
+- Delivered as three commits: transitivity, gold plus Dawid-Skene, and the
+  report together with the CLI (the report's tests run through the CLI).
+- Transitivity works on a model-level graph by default. Per-prompt graphs are
+  available (`level=response`), but with 4 pairs per prompt and 3 annotators
+  per pair an annotator rarely judges all three pairs of a triad on one prompt,
+  so they almost never contain a complete triad. The baseline is a Monte
+  Carlo p-value over random re-orientations of the annotator's own edges (each
+  complete triad is a cycle with probability 1/4). The flag fires when the
+  p-value is above 0.5 (at least as cyclic as the median coin flipper), not
+  when it fails to be significant: with six models a careful annotator has at
+  most 20 triads and cannot always reach p < 0.05. On six models this check is
+  supporting evidence (it catches the spammer in 4 and 8 of 20 seeds); with
+  ten models it separates the spammer cleanly (tested).
+- Dawid-Skene defaults to the one-coin model. With full confusion matrices,
+  the arbitrary a/b orientation plus a strong model that sorts first by id
+  leaves few items of one class, and noisy estimates of that row called 7 of
+  160 honest annotators spammers on seeds 0-19; the one-coin model called
+  none. The full model stays available (`symmetric=False`) and is tested on an
+  annotator with an asymmetric confusion matrix.
+- Spammer (score below 0.1) and reversed (informative, accuracy below 0.5)
+  are separate verdicts, because the Raykar-Yu score is high for a perfectly
+  reversed annotator.
+- Gold ties count as misses; the gold flag uses the Wilson upper bound
+  (below 0.7), mirroring the self-consistency rule, so 12 gold pairs never
+  flag an honest annotator on their own.
+- `scripts/detection_rates.py` now runs the full `run_audit` and reports every
+  flag; on seeds 0-19 the audit flags every planted spammer and adversarial
+  annotator at both sizes and 3 of 320 honest annotators.
 
 ### Slice 5: Collection via scheduler, CLI annotation and web UI
 
@@ -259,8 +290,9 @@ Delivered early (to make the repository runnable before the audit and export
 slices): the digest-pinned multi-stage Dockerfile with uv and a non-root user,
 `.dockerignore`, `make docker`, `scripts/demo.sh` with `make demo` and
 `make docker-demo` on a bundled seed-0 sample, and a CI job that builds the
-image and runs the demo in it. Still open: the compose file (commit 2), and
-extending the demo to audit and export once those slices exist.
+image and runs the demo in it. The demo now ends with `audit` (and requires
+`audit --strict` to exit 1). Still open: the compose file (commit 2), and
+extending the demo to export once that slice exists.
 
 ### Slice 8: Benchmarks and documentation polish
 

@@ -3,18 +3,18 @@
 [![CI](https://github.com/vipul21435/prefpairs/actions/workflows/ci.yml/badge.svg)](https://github.com/vipul21435/prefpairs/actions/workflows/ci.yml)
 
 RLHF preference-data toolkit: store pairwise judgments with full provenance,
-generate synthetic data with known ground truth, test every annotator for
-position bias, length bias, agreement and self-consistency, and rank models or
-responses with Bradley-Terry and Elo plus cluster-bootstrap confidence
-intervals, then check the ranking against the truth.
+generate synthetic data with known ground truth, audit every annotator
+(position bias, length bias, agreement, self-consistency, transitivity, gold
+accuracy, Dawid-Skene spammer score) into one flagged-or-not verdict with
+reasons, and rank models or responses with Bradley-Terry and Elo plus
+cluster-bootstrap confidence intervals, then check the ranking against the
+truth.
 
-> Status: slices 1 to 3 of 8 are done (data model and store, simulator,
-> aggregation with intervals and the `rank` command, annotator bias and
-> agreement checks with the `checks` command), plus a Docker image and an
-> end-to-end `make demo`. The combined audit report (transitivity, gold
-> accuracy, spammer detection), a collection UI and DPO/KTO/reward-model export
-> are **not built yet**; they are listed under [Roadmap](#roadmap) and
-> specified in [PLAN.md](PLAN.md).
+> Status: slices 1 to 4 of 8 are done (data model and store, simulator,
+> aggregation with intervals and the `rank` command, annotator checks, and the
+> combined `audit` report), plus a Docker image and an end-to-end `make demo`.
+> A collection UI and DPO/KTO/reward-model export are **not built yet**; they
+> are listed under [Roadmap](#roadmap) and specified in [PLAN.md](PLAN.md).
 
 ## Why this exists
 
@@ -39,6 +39,7 @@ deterministic and every number is reproducible.
 | Simulate | Synthetic data with known model strengths and annotators with planted noise and bias | seeded generative model with analytic choice probabilities | `simulate` |
 | Aggregate | Ranking of models or responses with uncertainty | Bradley-Terry (MM algorithm, numpy only), Elo averaged over seeded game orders, prompt-level cluster bootstrap, percentile intervals for values and ranks, empirical vs predicted win rates | `rank` |
 | Annotator checks | Position bias, length (verbosity) bias, inter-annotator agreement, self-consistency on flipped control repeats; each a typed result with its statistic, p-value or interval and evidence counts | exact two-sided binomial test with Holm-Bonferroni; Newton/IRLS logistic regression with a likelihood-ratio test, controlled for consensus quality; Cohen and Fleiss kappa on canonical labels; Wilson intervals | `checks` |
+| Audit | Every check above plus transitivity, gold accuracy and a spammer score, combined into a per-annotator verdict with one line of evidence per flag; `--strict` exits 1 when anyone is flagged | preference digraphs with iterative Tarjan SCC and 3-cycle counts against seeded random re-orientations; gold accuracy with a Wilson bound; Dawid-Skene EM (one-coin or full confusion matrices) with the Raykar-Yu spammer score | `audit` |
 | Package | Reproducible runtime and demo | digest-pinned `python:3.12-slim`, uv, non-root user | `make demo`, `make docker-demo` |
 
 ## Quickstart
@@ -48,12 +49,13 @@ Requires [uv](https://docs.astral.sh/uv/), Git and make.
 ```bash
 git clone https://github.com/vipul21435/prefpairs.git && cd prefpairs
 uv sync --frozen        # Python 3.12 venv from uv.lock
-make demo               # import bundled sample, stats, rank with CIs, annotator checks
+make demo               # import bundled sample, stats, rank with CIs, checks, audit
 make check              # ruff, mypy --strict, pytest with branch coverage
 ```
 
 `make demo` ends with `demo OK: both rankings recover the true model order and
-the checks flag the planted biases`, and fails if either part does not hold.
+the audit flags exactly the planted annotators`, and fails if any part does not
+hold (it also requires `audit --strict` to exit 1 on the sample).
 With Docker instead of uv:
 
 ```bash
@@ -71,6 +73,7 @@ docker build -t prefpairs . && docker run --rm --entrypoint sh prefpairs scripts
 | `prefpairs dump --db PATH [--out FILE]` | canonical JSONL of every record |
 | `prefpairs rank --db PATH [--method bt\|elo] [--level model\|response] [--replicates N] [--resample prompt\|judgment] [--confidence 0.95] [--prior 0.1] [-x ANNOTATOR ...] [--include-ranked] [--truth FILE] [--json]` | ranking with bootstrap intervals, fit gap, and Kendall tau against the truth when it is known |
 | `prefpairs checks --db PATH [--alpha 0.05] [--confidence 0.95] [--no-quality-adjustment] [--truth FILE] [--json]` | per-annotator position, length, agreement and self-consistency checks, with the planted archetype when the truth is known |
+| `prefpairs audit --db PATH [--alpha 0.05] [--confidence 0.95] [--min-gold-accuracy 0.7] [--min-spammer-score 0.1] [--seed 0] [--truth FILE] [--strict] [--json]` | combined per-annotator verdicts with the reason for every flag; `--strict` exits 1 when anyone is flagged |
 | `prefpairs info` | version and which pipeline stages are available |
 
 `--db` defaults to `.prefpairs/prefpairs.db` and can be set with `PREFPAIRS_DB`.
@@ -164,10 +167,59 @@ response twice as long gets about `exp(1.92 * ln 2) = 3.8` times the odds of
 being chosen, after controlling for position and for the consensus quality of
 the two models. The adversarial `ann-06` is the only annotator with negative
 agreement (kappa -0.644) and the random spammer `ann-08` sits near zero
-(+0.112); neither is a position or length problem, so neither is flagged here:
-turning agreement, gold accuracy and a spammer score into verdicts is the
-audit of slice 4. With 3 or 4 compared controls per annotator, the
-self-consistency intervals are too wide to flag anyone on this sample.
+(+0.112); neither is a position or length problem, so `checks` does not flag
+them. With 3 or 4 compared controls per annotator, the self-consistency
+intervals are too wide to flag anyone on this sample.
+
+The demo ends with the combined audit, which flags exactly the four planted
+annotators:
+
+```text
+$ prefpairs audit --truth examples/sample-truth.json
+Annotator audit of 672 pairwise judgments from 12 annotators
+alpha 0.05 (Holm) for position and length; 95% Wilson intervals
+
+gold:   accuracy on gold pairs (flag if the 95% upper bound < 0.7)
+DS:     Dawid-Skene accuracy and spammer score (spammer if score < 0.1, reversed if accuracy < 0.5)
+cycles: cyclic / complete triads in the model-level preference graph (coin flips: 0.25)
+
+annotator     gold        95% CI  DS acc   spam  cycles  flags                 planted
+ann-01       11/12  [0.65, 0.99]    0.91   0.67    0/12  -                     reliable
+ann-02        9/12  [0.47, 0.91]    0.77   0.29     0/4  -                     noisy
+ann-03       12/12  [0.76, 1.00]    0.97   0.87    0/20  -                     reliable
+ann-04       11/12  [0.65, 0.99]    0.92   0.69    0/20  -                     reliable
+ann-05       12/12  [0.76, 1.00]    0.95   0.79    0/20  -                     reliable
+ann-06        0/12  [0.00, 0.24]    0.08   0.69    0/16  gold+reversed         adversarial
+ann-07       10/12  [0.55, 0.95]    0.81   0.38    0/11  -                     noisy
+ann-08        7/12  [0.32, 0.81]    0.52   0.00    4/13  intransitive+spammer  random_spammer
+ann-09       12/12  [0.76, 1.00]    0.99   0.95    0/20  -                     reliable
+ann-10       12/12  [0.76, 1.00]    0.84   0.47    0/10  position              left_biased
+ann-11        9/12  [0.47, 0.91]    0.78   0.31    0/12  length                length_biased
+ann-12       11/11  [0.74, 1.00]    0.94   0.79    0/13  -                     reliable
+
+ann-06 gold: gold accuracy 0/12, upper bound 0.24 < 0.7
+ann-06 reversed: estimated accuracy 0.08 < 0.5 over 52 labels
+ann-08 intransitive: 4 of 13 triads cyclic (coin flips: 0.25), P(at most as cyclic) 0.76
+ann-08 spammer: spammer score 0.002 < 0.1 over 52 labels
+ann-10 position: left 43 of 56 decisive choices, p adj 8.8e-04
+ann-11 length: length slope +1.92 log-odds per unit log word ratio, p adj 0.005
+
+flagged: ann-06 (gold+reversed), ann-08 (intransitive+spammer), ann-10 (position), ann-11 (length)
+
+$ prefpairs audit --strict
+exit code 1 (annotators flagged)
+```
+
+How to read it: `ann-06` picked the agreed-better response on none of its 12
+gold pairs (Wilson upper bound 0.24), and Dawid-Skene, which never sees the
+gold answers, independently estimates its accuracy at 0.08: it reads the
+responses and prefers the worse one, so it is flagged as `reversed` rather
+than as a spammer (its spammer score, 0.69, says its labels are informative).
+`ann-08`'s labels are nearly independent of the consensus truth (spammer
+score 0.002, estimated accuracy 0.52), and its model-level preference graph
+has 4 cyclic triads out of 13, more than the median coin flipper with the same
+comparisons. Its gold accuracy of 7/12 is not low enough to flag on its own
+with 12 gold pairs, which is why the audit combines independent views.
 
 ## Architecture
 
@@ -180,6 +232,9 @@ flowchart LR
     C --> BT[Bradley-Terry<br/>MM fit with prior]
     S --> Q[annotator checks<br/>position, length, kappa,<br/>self-consistency]
     BT -->|consensus quality| Q
+    S --> A[audit<br/>transitivity, gold accuracy,<br/>Dawid-Skene spammer score]
+    Q --> A
+    A --> V[per-annotator verdicts<br/>text, JSON, --strict]
     C --> E[Elo<br/>mean over seeded orders]
     C --> B[cluster bootstrap<br/>replicate weights]
     B --> BT
@@ -210,6 +265,9 @@ flowchart LR
 | `quality/agreement.py` | Cohen and Fleiss kappa on canonical labels |
 | `quality/consistency.py` | self-consistency on control repeats |
 | `quality/checks.py` | the `checks` report |
+| `quality/transitivity.py` | preference digraphs, iterative Tarjan SCC, 3-cycle counts, random-orientation baseline |
+| `quality/spam.py` | gold accuracy with Wilson bounds, Dawid-Skene EM, spammer score |
+| `quality/report.py` | `AuditConfig`, `AuditReport` and the `audit` renderer |
 | `cli.py` | Typer commands |
 
 ## Measured numbers
@@ -219,40 +277,48 @@ laptop, Python 3.12).
 
 | What | Result | Reproduce |
 | --- | --- | --- |
-| Tests | 398 passed | `make cov` |
-| Branch coverage | 99.93% (gate: 85%) | `make cov` |
+| Tests | 440 passed | `make cov` |
+| Branch coverage | 99.91% (gate: 85%) | `make cov` |
 | Ranking recovery on the bundled sample | Kendall tau 1.000 for Bradley-Terry and for Elo | `make demo` |
 | Annotator checks on the bundled sample | flag exactly `ann-10` (planted left_biased) and `ann-11` (planted length_biased) | `make demo` |
-| End-to-end demo wall time | 1.2 to 1.4 s over two runs | `time make demo` |
+| Audit on the bundled sample | flags exactly `ann-06`, `ann-08`, `ann-10`, `ann-11` (the four planted annotators); `--strict` exits 1 | `make demo` |
+| End-to-end demo wall time | 3.4 to 3.7 s over two runs (now including two audits) | `time make demo` |
 | One `rank` with 500 bootstrap replicates | about 0.2 s | `time uv run prefpairs rank --db .prefpairs/demo.db` (after `make demo`) |
 | One `checks` on the sample (672 judgments) | about 0.3 s | `time uv run prefpairs checks --db .prefpairs/demo.db` (after `make demo`) |
+| One `audit` on the sample | about 0.5 s | `time uv run prefpairs audit --db .prefpairs/demo.db` (after `make demo`) |
 | Docker image size | 327 MB on disk, 71 MB content (compressed) | `make docker && docker image ls prefpairs:local` |
 
-How often each check flags each archetype, from `uv run python
+How often each audit flag fires for each archetype, from `uv run python
 scripts/detection_rates.py --seeds 20` (flagged / simulated annotators over
-seeds 0-19, alpha 0.05 with Holm-Bonferroni, default archetype profiles):
+seeds 0-19, default `AuditConfig`, default archetype profiles; the script runs
+the same `run_audit` as the CLI):
 
-| Size | Archetype | position | length | consistency | any |
-| --- | --- | --- | --- | --- | --- |
-| 40 prompts x 4 pairs (default) | reliable | 0/120 | 1/120 | 0/120 | 1/120 |
-| | noisy | 0/40 | 0/40 | 0/40 | 0/40 |
-| | left_biased | 7/20 | 0/20 | 0/20 | 7/20 |
-| | length_biased | 0/20 | 16/20 | 0/20 | 16/20 |
-| | random_spammer | 0/20 | 0/20 | 1/20 | 1/20 |
-| | adversarial | 0/20 | 0/20 | 0/20 | 0/20 |
-| 60 prompts x 8 pairs | reliable | 0/120 | 1/120 | 0/120 | 1/120 |
-| | noisy | 0/40 | 0/40 | 0/40 | 0/40 |
-| | left_biased | 20/20 | 0/20 | 0/20 | 20/20 |
-| | length_biased | 0/20 | 20/20 | 0/20 | 20/20 |
-| | random_spammer | 0/20 | 0/20 | 0/20 | 0/20 |
-| | adversarial | 0/20 | 0/20 | 0/20 | 0/20 |
+| Size | Archetype | position | length | consistency | intransitive | gold | spammer | reversed | any |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 40 prompts x 4 pairs (default) | reliable | 0/120 | 1/120 | 0/120 | 0/120 | 0/120 | 0/120 | 0/120 | 1/120 |
+|  | noisy | 0/40 | 0/40 | 0/40 | 1/40 | 0/40 | 0/40 | 0/40 | 1/40 |
+|  | left_biased | 7/20 | 0/20 | 0/20 | 0/20 | 0/20 | 0/20 | 0/20 | 7/20 |
+|  | length_biased | 0/20 | 16/20 | 0/20 | 0/20 | 1/20 | 5/20 | 0/20 | 17/20 |
+|  | random_spammer | 0/20 | 0/20 | 1/20 | 4/20 | 3/20 | 20/20 | 0/20 | 20/20 |
+|  | adversarial | 0/20 | 0/20 | 0/20 | 0/20 | 20/20 | 0/20 | 20/20 | 20/20 |
+| 60 prompts x 8 pairs | reliable | 0/120 | 1/120 | 0/120 | 0/120 | 0/120 | 0/120 | 0/120 | 1/120 |
+|  | noisy | 0/40 | 0/40 | 0/40 | 0/40 | 0/40 | 0/40 | 0/40 | 0/40 |
+|  | left_biased | 20/20 | 0/20 | 0/20 | 0/20 | 0/20 | 0/20 | 0/20 | 20/20 |
+|  | length_biased | 0/20 | 20/20 | 0/20 | 0/20 | 0/20 | 3/20 | 0/20 | 20/20 |
+|  | random_spammer | 0/20 | 0/20 | 0/20 | 8/20 | 6/20 | 20/20 | 0/20 | 20/20 |
+|  | adversarial | 0/20 | 0/20 | 0/20 | 0/20 | 20/20 | 0/20 | 20/20 | 20/20 |
 
 At the default size an annotator makes about 55 decisive choices, and the
 planted left-biased annotator still reads the answers (its choices follow
 quality as well as position), so the model-free binomial test finds it in only
-7 of 20 seeds; with about 140 choices each it finds it every time. Random
-spammers and adversarial annotators are not position- or length-driven and
-are left to the slice-4 audit.
+7 of 20 seeds; with about 140 choices each it finds it every time. The random
+spammer is caught by the Dawid-Skene spammer score in every seed at both sizes
+and the adversarial annotator by gold accuracy and the `reversed` flag in every
+seed. Transitivity is supporting evidence, not a primary detector: with six
+models an annotator has at most 20 complete triads, so it catches the spammer
+in only 4 and 8 of 20 seeds (the test suite shows it separating the spammer
+cleanly with ten models). Of the 320 honest (reliable or noisy) simulated
+annotators above, the audit flagged 3.
 
 Statistical properties are pinned by tests rather than quoted: the
 Bradley-Terry score equations hold at the solution and the log-likelihood never
@@ -268,7 +334,13 @@ Woolf's (`tests/test_logistic.py`); Cohen and Fleiss kappa match exact
 fractions to 1e-12, and Fleiss with two raters equals Scott's pi
 (`tests/test_agreement.py`); on the 60 x 8 simulation the three checks
 together flag exactly the left_biased and length_biased annotators for seeds
-0-9 (`tests/test_quality_simulated.py`).
+0-9 (`tests/test_quality_simulated.py`). Tarjan components and 3-cycle counts
+match hand-built tournaments and Kendall's circular-triad formula on random
+tournaments, and the component search handles a 5000-node cycle without
+recursion (`tests/test_transitivity.py`); Dawid-Skene recovers planted
+accuracies within 0.05 and its penalised log-likelihood never decreases, with
+or without smoothing, for both the one-coin and the full model
+(`tests/test_spam.py`).
 
 ## Design decisions
 
@@ -309,6 +381,29 @@ together flag exactly the left_biased and length_biased annotators for seeds
   are separated; separation is detected and reported.
 - **Agreement is on canonical labels.** Kappa compares what a judgment means
   (which response won, on the id-sorted pair), not which side was clicked.
+- **The audit combines independent views.** Gold accuracy uses a dozen
+  known answers; Dawid-Skene uses every label but no known answers;
+  transitivity uses only the annotator's own consistency. An annotator is
+  flagged when any view flags them, and the report prints the evidence for
+  each flag so a reviewer can disagree with it.
+- **Dawid-Skene is one-coin by default.** The a/b orientation of a pair is
+  arbitrary (it follows response ids), so an annotator's accuracy should not
+  depend on it. With full confusion matrices, a strong model that sorts first
+  leaves few items of the other class and their row is estimated from a
+  handful of labels. On seeds 0-19 at the default size,
+  `annotator_reliability(dataset.pairwise, symmetric=False)` called 7 of the
+  160 reliable or noisy annotators spammers; the one-coin model called none
+  (the `spammer` column above).
+- **Spammer and reversed are different verdicts.** A spammer's labels do not
+  depend on the truth (spammer score near 0); a reversed annotator's labels
+  depend on it strongly, but backwards. The Raykar-Yu score is high for both
+  a perfect and a perfectly reversed annotator, so reversal is read from the
+  estimated accuracy instead.
+- **Transitivity is judged against chance, not against zero.** The p-value
+  compares the annotator's cycle count with random re-orientations of their
+  own edges, and the flag fires only when they are at least as cyclic as the
+  median coin flipper; a significance rule would flag careful annotators
+  who happen to have few complete triads.
 - **Integrity in the database as well as in Python.** Composite foreign keys
   tie a judgment's responses to its prompt, a trigger requires a control to
   repeat an earlier judgment of the same annotator on the same pair, and
@@ -379,10 +474,10 @@ be tested for what it is supposed to find:
 | --- | --- | --- | --- | --- | --- |
 | reliable | 3.0 | 0 | 0 | no | - |
 | noisy | 0.9 | 0 | 0 | no (down-weighted, not flagged) | - |
-| left_biased | 2.0 | +2.0 | 0 | yes | `checks`: position (self-consistency for a stronger habit) |
-| length_biased | 1.0 | 0 | 3.0 | yes | `checks`: length |
-| random_spammer | 0 | 0 | 0 | yes | planned audit (gold accuracy, Dawid-Skene) |
-| adversarial | -2.0 | 0 | 0 | yes | planned audit (negative kappa is already visible) |
+| left_biased | 2.0 | +2.0 | 0 | yes | position (self-consistency for a stronger habit) |
+| length_biased | 1.0 | 0 | 3.0 | yes | length |
+| random_spammer | 0 | 0 | 0 | yes | Dawid-Skene spammer score (transitivity and gold accuracy as support) |
+| adversarial | -2.0 | 0 | 0 | yes | gold accuracy and Dawid-Skene `reversed` |
 
 ## Development
 
@@ -393,7 +488,7 @@ be tested for what it is supposed to find:
 | `make test` | `pytest -q` |
 | `make cov` | tests with branch coverage, fails under 85% |
 | `make check` | all of the above (what CI runs) |
-| `make demo` | end-to-end demo on the bundled sample |
+| `make demo` | end-to-end demo on the bundled sample, ending with the audit |
 | `make docker` / `make docker-demo` | build the image (label `project=prefpairs`, dangling layers pruned) / run the demo in it |
 
 CI runs lint, strict typing and the test suite with coverage, and in a second
@@ -405,9 +500,6 @@ is needed.
 
 Not built yet, in the order of [PLAN.md](PLAN.md):
 
-- **Transitivity, spammer detection and `prefpairs audit` (slice 4):** cycle
-  counts in per-annotator preference graphs, gold accuracy, Dawid-Skene EM, and
-  a per-annotator report that must flag exactly the planted annotators.
 - **Collection (slice 5):** a seeded pair scheduler with control and gold
   injection, a terminal `annotate` loop and a small server-rendered web UI.
 - **Export (slice 6):** vote aggregation with filters, DPO, KTO and
