@@ -9,6 +9,7 @@ from prefpairs.quality.stats import (
     binom_test,
     chi2_1_sf,
     holm,
+    holm_estimable,
     normal_quantile,
     normal_two_sided_p,
     wilson_interval,
@@ -121,3 +122,12 @@ def test_normal_and_chi_square_tails() -> None:
     # A chi-square(1) variable is a squared standard normal.
     assert chi2_1_sf(1.959963984540054**2) == pytest.approx(0.05, rel=1e-12)
     assert chi2_1_sf(-1.0) == 1.0
+
+
+def test_holm_estimable_adjusts_only_the_tested_entries() -> None:
+    assert holm_estimable([0.01, 1.0, 0.04, 1.0], [True, False, True, False]) == pytest.approx(
+        [0.02, 1.0, 0.04, 1.0]
+    )
+    assert holm_estimable([], []) == []
+    with pytest.raises(ValueError, match="same length"):
+        holm_estimable([0.1], [])

@@ -76,3 +76,15 @@ def test_flags_exactly_the_left_biased_annotators(seed: int) -> None:
     archetypes = dataset.truth.annotator_archetypes
     expected = tuple(sorted(a for a, k in archetypes.items() if k is Archetype.LEFT_BIASED))
     assert position_bias(dataset.pairwise).flagged == expected
+
+
+def test_annotators_without_decisive_choices_do_not_join_the_holm_family() -> None:
+    biased = choices("ann-y", "l" * 15 + "r")
+    alone = position_bias(biased)
+    assert alone.flagged == ("ann-y",)
+    ties = [j for i in range(100) for j in choices(f"tie-{i:03d}", "ttt")]
+    crowded = position_bias(biased + ties)
+    rows = {r.annotator_id: r for r in crowded.results}
+    assert rows["ann-y"].p_adjusted == pytest.approx(alone.results[0].p_adjusted)
+    assert crowded.flagged == ("ann-y",)
+    assert all(rows[f"tie-{i:03d}"].p_adjusted == 1.0 for i in range(100))

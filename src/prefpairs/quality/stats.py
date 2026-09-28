@@ -85,6 +85,25 @@ def holm(p_values: Sequence[float]) -> list[float]:
     return adjusted
 
 
+def holm_estimable(p_values: Sequence[float], tested: Sequence[bool]) -> list[float]:
+    """Holm-Bonferroni over the entries marked ``tested``; the rest get 1.0.
+
+    A check gives a placeholder p-value of 1.0 to an annotator it could not
+    test (too few judgments, no decisive choices). Counting those placeholders
+    in the family would multiply every real test by the total number of
+    annotators rather than the number actually tested, so a long tail of
+    low-volume annotators could hide a real flag.
+    """
+    if len(p_values) != len(tested):
+        msg = "p_values and tested must have the same length"
+        raise ValueError(msg)
+    indices = [i for i, t in enumerate(tested) if t]
+    adjusted = [1.0] * len(p_values)
+    for index, value in zip(indices, holm([p_values[i] for i in indices]), strict=True):
+        adjusted[index] = value
+    return adjusted
+
+
 def normal_quantile(q: float) -> float:
     """Inverse of the standard normal CDF."""
     return NormalDist().inv_cdf(q)

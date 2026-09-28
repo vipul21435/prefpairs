@@ -113,3 +113,28 @@ def test_flags_exactly_the_length_biased_annotators(seed: int) -> None:
     assert row.coefficient is not None
     assert row.coefficient > 1.0
     assert row.n_longer_chosen > row.n_shorter_chosen
+
+
+def mostly_longer(annotator: str, n: int, n_longer: int) -> list[PairwiseJudgment]:
+    """Alternating sides; the longer answer wins the first ``n_longer`` judgments."""
+    out = []
+    for i in range(n):
+        left, right = ("long", "short") if i % 2 == 0 else ("short", "long")
+        winner = "long" if i < n_longer else "short"
+        out.append(judgment(annotator, left, right, "left" if left == winner else "right"))
+    return out
+
+
+def test_untestable_annotators_do_not_join_the_holm_family() -> None:
+    biased = mostly_longer("ann-x", 30, 24)
+    alone = length_bias(biased, RESPONSES, adjust_for_quality=False)
+    (row,) = alone.results
+    assert row.flagged
+    tail = [j for i in range(50) for j in mostly_longer(f"small-{i:02d}", 6, 3)]
+    crowded = length_bias(biased + tail, RESPONSES, adjust_for_quality=False)
+    rows = {r.annotator_id: r for r in crowded.results}
+    assert rows["ann-x"].p_adjusted == pytest.approx(row.p_adjusted)
+    assert rows["ann-x"].flagged
+    assert crowded.flagged == ("ann-x",)
+    small = [r for a, r in rows.items() if a != "ann-x"]
+    assert all(r.coefficient is None and r.p_adjusted == 1.0 for r in small)

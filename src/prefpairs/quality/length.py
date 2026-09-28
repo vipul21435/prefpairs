@@ -37,7 +37,7 @@ from prefpairs.aggregate import (
     fit_bradley_terry,
 )
 from prefpairs.quality.logistic import fit_logistic, likelihood_ratio
-from prefpairs.quality.stats import holm
+from prefpairs.quality.stats import holm_estimable
 from prefpairs.schema import Choice, PairKind, PairwiseJudgment, Record, Response
 
 LENGTH_COLUMN = 1
@@ -215,7 +215,7 @@ def _round(
             others = [j for j in all_judgments if j.annotator_id not in left_out]
             strengths = consensus_strengths(others, responses)
         fitted.append(_fit(annotator, decisive[annotator], by_id, strengths, options))
-    adjusted = holm([r.p_value for r, _ in fitted])
+    adjusted = holm_estimable([r.p_value for r, _ in fitted], [e for _, e in fitted])
     return tuple(
         r.model_copy(update={"p_adjusted": adj, "flagged": estimable and adj <= alpha})
         for (r, estimable), adj in zip(fitted, adjusted, strict=True)
@@ -248,7 +248,9 @@ def length_bias(
     the annotators flagged in the first.
 
     Annotators with fewer than ``min_decisive`` decisive judgments, or who only
-    saw equal-length pairs, get ``coefficient=None`` and are never flagged.
+    saw equal-length pairs, get ``coefficient=None`` and are never flagged. They
+    are left out of the Holm family too (their ``p_adjusted`` is 1.0), so a long
+    tail of low-volume annotators does not dilute the test of the others.
     """
     all_judgments = list(judgments)
     response_list = list(responses)

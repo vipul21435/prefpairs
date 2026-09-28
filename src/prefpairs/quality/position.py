@@ -7,7 +7,9 @@ decisive choices (ties and skips are reported but carry no side) and runs an
 exact two-sided binomial test of ``left ~ Binomial(left + right, 1/2)``.
 
 One test per annotator is a family of tests, so the p-values are adjusted with
-Holm-Bonferroni before an annotator is flagged. A pooled test over every
+Holm-Bonferroni before an annotator is flagged. Only annotators with at least
+one decisive choice are in the family; the others cannot be tested and get an
+adjusted p-value of 1.0. A pooled test over every
 annotator is reported as well: a significant pooled rate with no single
 annotator flagged points at the interface (for example the left response
 loading first) rather than at a person.
@@ -18,7 +20,7 @@ from collections.abc import Iterable, Sequence
 
 from pydantic import Field
 
-from prefpairs.quality.stats import binom_test, holm, wilson_interval
+from prefpairs.quality.stats import binom_test, holm_estimable, wilson_interval
 from prefpairs.schema import Choice, PairKind, PairwiseJudgment, Record
 
 ALL_PAIR_KINDS: tuple[PairKind, ...] = tuple(PairKind)
@@ -113,16 +115,15 @@ def position_bias(
         per_annotator[judgment.annotator_id][judgment.choice] += 1
         pooled[judgment.choice] += 1
     annotators = sorted(per_annotator)
-    raw = [
-        binom_test(
-            per_annotator[a][Choice.LEFT],
-            per_annotator[a][Choice.LEFT] + per_annotator[a][Choice.RIGHT],
-        )
-        for a in annotators
+    lefts = [per_annotator[a][Choice.LEFT] for a in annotators]
+    decisive = [
+        left + per_annotator[a][Choice.RIGHT] for a, left in zip(annotators, lefts, strict=True)
     ]
+    raw = [binom_test(left, n) for left, n in zip(lefts, decisive, strict=True)]
+    adjusted = holm_estimable(raw, [n > 0 for n in decisive])
     results = tuple(
         _result(a, per_annotator[a], p_adjusted=adj, alpha=alpha, confidence=confidence)
-        for a, adj in zip(annotators, holm(raw), strict=True)
+        for a, adj in zip(annotators, adjusted, strict=True)
     )
     return PositionBiasReport(
         alpha=alpha,
