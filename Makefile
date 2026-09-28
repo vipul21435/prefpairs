@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 UV ?= uv
 
-.PHONY: help install lint format typecheck test cov check demo docker docker-run clean
+.PHONY: help install lint format typecheck test cov check demo docker docker-run docker-demo clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -31,10 +31,8 @@ check: lint typecheck cov ## Everything CI runs
 
 DEMO_DB ?= .prefpairs/demo.db
 
-demo: ## Simulate a seeded dataset with known ground truth and summarise it
-	rm -f $(DEMO_DB)
-	$(UV) run prefpairs simulate --seed 0 --db $(DEMO_DB)
-	$(UV) run prefpairs stats --db $(DEMO_DB)
+demo: ## End to end on the bundled sample: import, stats, rank with CIs, check recovery
+	PREFPAIRS="$(UV) run prefpairs" DEMO_DB=$(DEMO_DB) sh scripts/demo.sh
 
 IMAGE ?= prefpairs:local
 
@@ -44,6 +42,9 @@ docker: ## Build the CLI image (label project=prefpairs) and prune dangling laye
 
 docker-run: ## Run the CLI in the image, e.g. make docker-run ARGS="simulate --seed 0"
 	docker run --rm $(IMAGE) $(ARGS)
+
+docker-demo: docker ## Run the end-to-end demo inside the image
+	docker run --rm --entrypoint sh $(IMAGE) scripts/demo.sh
 
 clean: ## Remove caches and build output
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage coverage.xml htmlcov dist build

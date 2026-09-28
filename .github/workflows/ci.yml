@@ -60,7 +60,7 @@ jobs:
       - name: Build the CLI image
         run: docker build -t prefpairs:ci .
 
-      - name: Smoke-test the image as its non-root user
+      - name: Run the end-to-end demo inside the image
         run: |
           docker run --rm prefpairs:ci --version
-          docker run --rm prefpairs:ci simulate --seed 0
+          docker run --rm --entrypoint sh prefpairs:ci scripts/demo.sh

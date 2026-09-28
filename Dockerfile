@@ -3,6 +3,7 @@
 # base, run as a non-root user. Build and try it with:
 #   docker build -t prefpairs .
 #   docker run --rm prefpairs simulate --seed 0
+#   docker run --rm --entrypoint sh prefpairs scripts/demo.sh
 
 ARG PYTHON_IMAGE=python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc
@@ -34,7 +35,9 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin prefpairs \
     && chown prefpairs:prefpairs /data
 COPY --from=build /opt/venv /opt/venv
 COPY examples /app/examples
+COPY scripts /app/scripts
 ENV PATH=/opt/venv/bin:$PATH \
+    DEMO_DB=/data/demo.db \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PREFPAIRS_DB=/data/prefpairs.db
