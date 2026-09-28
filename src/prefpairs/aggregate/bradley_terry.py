@@ -140,8 +140,13 @@ def penalised_log_likelihood(log_p: FloatArray, wins: FloatArray, prior: float) 
 class _MMResult:
     log_p: FloatArray
     iterations: int
-    converged: bool
+    unconverged: int
+    """Number of batch rows still moving by more than ``tol`` at the cap."""
     trace: tuple[float, ...]
+
+    @property
+    def converged(self) -> bool:
+        return self.unconverged == 0
 
 
 _SHIFT_MAX_STEPS = 100
@@ -172,7 +177,7 @@ def best_shift(log_p: FloatArray) -> FloatArray:
         low = np.where(f > 0, low, u)
         with np.errstate(divide="ignore", invalid="ignore"):
             newton = u - f / slope
-        inside = (newton > low) & (newton < high)
+        inside = (newton >= low) & (newton <= high)
         step = np.where(inside, newton, 0.5 * (low + high)) - u
         u = u + step
         if np.all(np.abs(step) < _SHIFT_TOL):
@@ -219,8 +224,8 @@ def fit_counts_batch(
         done = np.flatnonzero(active)[change < config.tol]
         active[done] = False
         if not active.any():
-            return _MMResult(log_p, iterations, True, tuple(trace))
-    return _MMResult(log_p, config.max_iter, False, tuple(trace))
+            return _MMResult(log_p, iterations, 0, tuple(trace))
+    return _MMResult(log_p, config.max_iter, int(active.sum()), tuple(trace))
 
 
 def fit_bradley_terry(
