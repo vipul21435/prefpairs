@@ -15,6 +15,7 @@ from prefpairs.aggregate.comparisons import (
     Level,
     build_comparisons,
 )
+from prefpairs.aggregate.elo import EloConfig, EloFit, fit_elo
 
 __all__ = [
     "BradleyTerryConfig",
@@ -22,10 +23,13 @@ __all__ = [
     "ComparisonOptions",
     "ComparisonSet",
     "DropReason",
+    "EloConfig",
+    "EloFit",
     "Level",
     "NotIdentifiableError",
     "build_comparisons",
     "fit_bradley_terry",
+    "fit_elo",
     "predicted_win_rates",
     "sample_bradley_terry",
 ]
