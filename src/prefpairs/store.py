@@ -198,7 +198,18 @@ CREATE TABLE ranked_items (
 CREATE INDEX idx_ranked_items_response ON ranked_items (prompt_id, response_id);
 """
 
-MIGRATIONS: tuple[Migration, ...] = (Migration(1, "core preference-data tables", _V1_CORE),)
+_V2_SIMULATION_TRUTH = """
+CREATE TABLE simulation_truth (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    seed INTEGER NOT NULL,
+    truth_json TEXT NOT NULL CHECK (json_valid(truth_json))
+) STRICT;
+"""
+
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration(1, "core preference-data tables", _V1_CORE),
+    Migration(2, "ground truth of a simulated dataset", _V2_SIMULATION_TRUTH),
+)
 """Every schema migration, in version order. Append only; never edit a released one."""
 
 
@@ -599,6 +610,30 @@ class Store:
         yield from self.gold_pairs()
         yield from self.pairwise()
         yield from self.ranked()
+
+    def save_simulation_truth(self, seed: int, truth_json: str) -> bool:
+        """Store the ground truth of a simulated dataset (at most one per database).
+
+        Returns True when stored, False when the identical truth is already
+        present; a different truth raises RecordConflictError.
+        """
+        with self.transaction():
+            existing = self.simulation_truth_json()
+            if existing is None:
+                self._conn.execute(
+                    "INSERT INTO simulation_truth (id, seed, truth_json) VALUES (1, ?, ?)",
+                    (seed, truth_json),
+                )
+                return True
+        if existing == truth_json:
+            return False
+        msg = "the database already holds a different simulated dataset; use a new database"
+        raise RecordConflictError(msg)
+
+    def simulation_truth_json(self) -> str | None:
+        """The stored ground-truth JSON, or None if the data was not simulated."""
+        row = self._conn.execute("SELECT truth_json FROM simulation_truth WHERE id = 1").fetchone()
+        return None if row is None else str(row[0])
 
     def counts(self) -> dict[str, int]:
         """Number of records of each kind."""
