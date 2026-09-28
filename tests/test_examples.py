@@ -42,3 +42,20 @@ def test_demo_script_runs_end_to_end(tmp_path: Path) -> None:
     assert result.stdout.rstrip().endswith(
         "demo OK: both rankings recover the true model order and the checks flag the planted biases"
     )
+
+
+def test_detection_rates_script_prints_a_row_per_size_and_archetype() -> None:
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(ROOT / "scripts" / "detection_rates.py"), "--seeds", "1"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert lines[0].startswith("flagged / simulated annotators over seeds 0-0")
+    assert len(lines) == 2 + 2 * 6
+    row = next(line for line in lines if "60 prompts x 8 pairs" in line and "left_biased" in line)
+    assert row.split()[-4:] == ["1/1", "0/1", "0/1", "1/1"]

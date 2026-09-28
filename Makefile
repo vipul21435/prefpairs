@@ -11,12 +11,12 @@ install: ## Create the virtualenv from uv.lock and install git hooks
 	$(UV) run pre-commit install
 
 lint: ## Ruff lint and format check
-	$(UV) run ruff check src tests
-	$(UV) run ruff format --check src tests
+	$(UV) run ruff check src tests scripts
+	$(UV) run ruff format --check src tests scripts
 
 format: ## Apply ruff fixes and formatting
-	$(UV) run ruff check --fix src tests
-	$(UV) run ruff format src tests
+	$(UV) run ruff check --fix src tests scripts
+	$(UV) run ruff format src tests scripts
 
 typecheck: ## mypy --strict over src/
 	$(UV) run mypy
