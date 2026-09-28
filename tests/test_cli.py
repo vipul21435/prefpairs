@@ -41,8 +41,8 @@ def test_info_lists_pipeline_stages() -> None:
     status = dict(line.split(maxsplit=2)[1:] for line in lines[1:])
     assert status["aggregate"] == "available: rank"
     assert status["audit"] == "available: checks, audit"
-    for stage in ("collect", "export"):
-        assert status[stage] == "planned"
+    assert status["export"] == "available: export"
+    assert status["collect"] == "planned"
 
 
 class TestInit:

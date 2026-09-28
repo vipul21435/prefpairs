@@ -19,6 +19,7 @@ from prefpairs.aggregate import (
     NotIdentifiableError,
     ResampleUnit,
 )
+from prefpairs.export import ExportFormat, FilterConfig, SplitConfig, export_dataset
 from prefpairs.jsonl import JsonlError, read_records, write_records
 from prefpairs.quality.checks import render_checks, run_checks
 from prefpairs.quality.report import AuditConfig, render_audit, run_audit
@@ -50,7 +51,7 @@ STAGES = (
     ("aggregate", "available: rank"),
     ("audit", "available: checks, audit"),
     ("collect", "planned"),
-    ("export", "planned"),
+    ("export", "available: export"),
 )
 
 DbOption = Annotated[
@@ -395,3 +396,83 @@ def rank(
         typer.echo(json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True))
     else:
         typer.echo(render_rank_report(report))
+
+
+@app.command()
+def export(
+    *,
+    db: DbOption = DEFAULT_DB,
+    fmt: Annotated[
+        ExportFormat,
+        typer.Option(
+            "--format", help="dpo: chosen/rejected; kto: labelled completions; rm: soft labels."
+        ),
+    ] = ExportFormat.DPO,
+    out: Annotated[
+        Path, typer.Option(help="Output directory; files go to <out>/<format>/.", file_okay=False)
+    ] = Path("export"),
+    min_votes: Annotated[int, typer.Option(min=1, help="Counted votes a pair needs.")] = 1,
+    min_agreement: Annotated[
+        float, typer.Option(min=0.0, max=1.0, help="Smallest share of votes the winner must hold.")
+    ] = 0.5,
+    keep_ties: Annotated[
+        bool, typer.Option("--keep-ties", help="Keep pairs whose votes are split evenly.")
+    ] = False,
+    exclude_annotator: Annotated[
+        list[str] | None,
+        typer.Option("--exclude-annotator", "-x", help="Leave out this annotator (repeatable)."),
+    ] = None,
+    audit: Annotated[
+        bool, typer.Option(help="Run the audit and leave out every annotator it flags.")
+    ] = True,
+    train: Annotated[
+        float, typer.Option(min=0.0, max=1.0, help="Share of prompts in train.")
+    ] = 0.8,
+    validation: Annotated[
+        float, typer.Option(min=0.0, max=1.0, help="Share of prompts in validation.")
+    ] = 0.1,
+    salt: Annotated[str, typer.Option(help="Salt of the prompt-level split hash.")] = "prefpairs",
+) -> None:
+    """Export training data (DPO, KTO or reward-model JSONL) with a dataset card."""
+    with _reported_errors():
+        split = SplitConfig(
+            train=train, validation=validation, test=round(1.0 - train - validation, 12), salt=salt
+        )
+        with Store.open(db, create=False) as store:
+            excluded = set(exclude_annotator or ())
+            flagged: tuple[str, ...] = ()
+            if audit:
+                flagged = run_audit(store, AuditConfig()).flagged
+                excluded |= set(flagged)
+            reason = (
+                f"audit flags: {', '.join(flagged) or 'none'}" if audit else "given with -x"
+            ) + (
+                f"; given with -x: {', '.join(sorted(exclude_annotator))}"
+                if audit and exclude_annotator
+                else ""
+            )
+            filters = FilterConfig(
+                min_votes=min_votes,
+                min_agreement=min_agreement,
+                drop_ties=not keep_ties,
+                exclude_annotators=tuple(sorted(excluded)),
+            )
+            card = export_dataset(
+                out,
+                fmt,
+                judgments=store.pairwise(),
+                prompts=store.prompts(),
+                responses=store.responses(),
+                filters=filters,
+                split=split,
+                source=db.name,
+                exclusion_reason=reason,
+            )
+    drops = ", ".join(f"{k} {v}" for k, v in card.drop_counts.items())
+    typer.echo(
+        f"kept {card.n_kept} of {card.n_pairs} pairs (dropped: {drops}); "
+        f"excluded annotators: {', '.join(card.excluded_annotators) or 'none'}"
+    )
+    for f in card.files:
+        typer.echo(f"{out / f.path}  {f.n_rows:>5} rows  sha256 {f.sha256[:16]}")
+    typer.echo(f"card: {out / fmt.value / 'card.md'} and card.json")

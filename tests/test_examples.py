@@ -26,7 +26,12 @@ def test_bundled_sample_is_exactly_the_seed_0_simulation(tmp_path: Path) -> None
 
 def test_demo_script_runs_end_to_end(tmp_path: Path) -> None:
     cli = Path(sys.executable).parent / "prefpairs"
-    env = {**os.environ, "PREFPAIRS": str(cli), "DEMO_DB": str(tmp_path / "demo.db")}
+    env = {
+        **os.environ,
+        "PREFPAIRS": str(cli),
+        "DEMO_DB": str(tmp_path / "demo.db"),
+        "EXPORT_DIR": str(tmp_path / "export"),
+    }
     result = subprocess.run(  # noqa: S603
         ["/bin/sh", str(ROOT / "scripts" / "demo.sh")],
         cwd=ROOT,
@@ -44,9 +49,12 @@ def test_demo_script_runs_end_to_end(tmp_path: Path) -> None:
         "ann-10 (position), ann-11 (length)"
     ) in result.stdout
     assert "exit code 1 (annotators flagged)" in result.stdout
+    assert "rerun: every DPO file and card is byte-identical" in result.stdout
+    for fmt in ("dpo", "kto", "rm"):
+        assert (tmp_path / "export" / fmt / "card.md").is_file()
     assert result.stdout.rstrip().endswith(
-        "demo OK: both rankings recover the true model order "
-        "and the audit flags exactly the planted annotators"
+        "demo OK: both rankings recover the true model order, the audit flags exactly "
+        "the planted annotators and the export is reproducible"
     )
 
 
