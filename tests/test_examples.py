@@ -39,8 +39,14 @@ def test_demo_script_runs_end_to_end(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("Kendall tau against the true order: 1.000") == 2
     assert "flagged: ann-10 (position), ann-11 (length)" in result.stdout
+    assert (
+        "flagged: ann-06 (gold+reversed), ann-08 (intransitive+spammer), "
+        "ann-10 (position), ann-11 (length)"
+    ) in result.stdout
+    assert "exit code 1 (annotators flagged)" in result.stdout
     assert result.stdout.rstrip().endswith(
-        "demo OK: both rankings recover the true model order and the checks flag the planted biases"
+        "demo OK: both rankings recover the true model order "
+        "and the audit flags exactly the planted annotators"
     )
 
 

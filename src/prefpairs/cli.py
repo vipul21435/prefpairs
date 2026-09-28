@@ -21,6 +21,7 @@ from prefpairs.aggregate import (
 )
 from prefpairs.jsonl import JsonlError, read_records, write_records
 from prefpairs.quality.checks import render_checks, run_checks
+from prefpairs.quality.report import AuditConfig, render_audit, run_audit
 from prefpairs.ranking import Method, NothingToRankError, rank_store, render_rank_report
 from prefpairs.simulate import (
     Archetype,
@@ -47,7 +48,7 @@ STAGES = (
     ("store", "available: init, import, dump, stats"),
     ("simulate", "available: simulate"),
     ("aggregate", "available: rank"),
-    ("audit", "available: checks (combined audit report planned)"),
+    ("audit", "available: checks, audit"),
     ("collect", "planned"),
     ("export", "planned"),
 )
@@ -285,6 +286,53 @@ def checks(
         typer.echo(json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True))
     else:
         typer.echo(render_checks(report))
+
+
+@app.command()
+def audit(
+    *,
+    db: DbOption = DEFAULT_DB,
+    alpha: Annotated[
+        float, typer.Option(min=0.0001, max=0.5, help="Family-wise error rate per test.")
+    ] = 0.05,
+    confidence: Annotated[
+        float, typer.Option(min=0.5, max=0.999, help="Interval coverage level.")
+    ] = 0.95,
+    min_gold_accuracy: Annotated[
+        float, typer.Option(min=0.0, max=1.0, help="Flag if the gold upper bound is below this.")
+    ] = 0.7,
+    min_spammer_score: Annotated[
+        float, typer.Option(min=0.0, max=1.0, help="Flag as spammer below this score.")
+    ] = 0.1,
+    seed: Annotated[int, typer.Option(min=0, help="Seed of the random-orientation baseline.")] = 0,
+    truth: TruthOption = None,
+    strict: Annotated[
+        bool, typer.Option("--strict", help="Exit with code 1 when any annotator is flagged.")
+    ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Print JSON instead of text.")] = False,
+) -> None:
+    """Combine every annotator check into per-annotator flags with reasons and evidence."""
+    with _reported_errors():
+        config = AuditConfig(
+            alpha=alpha,
+            confidence=confidence,
+            min_gold_accuracy=min_gold_accuracy,
+            min_spammer_score=min_spammer_score,
+            seed=seed,
+        )
+        known = _load_truth_file(truth)
+        with Store.open(db, create=False) as store:
+            if known is None:
+                known = load_truth(store)
+            report = run_audit(store, config, truth=known)
+    if as_json:
+        data = report.model_dump(mode="json")
+        data["flagged"] = list(report.flagged)
+        typer.echo(json.dumps(data, indent=2, sort_keys=True))
+    else:
+        typer.echo(render_audit(report))
+    if strict and report.flagged:
+        raise typer.Exit(code=1)
 
 
 @app.command()

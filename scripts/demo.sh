@@ -2,9 +2,11 @@
 # End-to-end PrefPairs demo on the bundled sample: a seed-0 simulation with
 # known ground truth (6 models, 12 annotators, 4 of them planted as defective).
 # It imports the JSONL, summarises it, ranks the models with Bradley-Terry and
-# with Elo (leaving the planted annotators out), runs the annotator checks, and
-# fails unless both rankings recover the true model order and the checks flag
-# exactly the planted position-biased and length-biased annotators.
+# with Elo (leaving the planted annotators out), runs the annotator checks and
+# the combined audit, and fails unless both rankings recover the true model
+# order, the checks flag exactly the planted position-biased and length-biased
+# annotators, and the audit flags exactly the four planted annotators (and
+# exits 1 under --strict).
 #
 #   PREFPAIRS  command that runs the CLI (default: prefpairs)
 #   DEMO_DB    database to (re)create      (default: .prefpairs/demo.db)
@@ -17,6 +19,7 @@ EXAMPLES="${EXAMPLES:-examples}"
 TRUTH="$EXAMPLES/sample-truth.json"
 EXPECT="Kendall tau against the true order: 1.000"
 EXPECT_FLAGS="flagged: ann-10 (position), ann-11 (length)"
+EXPECT_AUDIT="flagged: ann-06 (gold+reversed), ann-08 (intransitive+spammer), ann-10 (position), ann-11 (length)"
 
 step() { printf '\n$ prefpairs %s\n' "$*"; }
 
@@ -39,6 +42,16 @@ step checks --truth "$TRUTH"
 checks=$($PREFPAIRS checks --db "$DB" --truth "$TRUTH")
 printf '%s\n' "$checks"
 
+step audit --truth "$TRUTH"
+audit=$($PREFPAIRS audit --db "$DB" --truth "$TRUTH")
+printf '%s\n' "$audit"
+
+step audit --strict
+if $PREFPAIRS audit --db "$DB" --strict >/dev/null; then
+  echo "demo FAILED: audit --strict exited 0 although annotators are flagged" >&2; exit 1
+fi
+echo "exit code 1 (annotators flagged)"
+
 for result in "$bt" "$elo"; do
   case "$result" in
     *"$EXPECT"*) ;;
@@ -49,4 +62,8 @@ case "$checks" in
   *"$EXPECT_FLAGS"*) ;;
   *) echo "demo FAILED: the checks did not flag exactly the planted biased annotators" >&2; exit 1 ;;
 esac
-printf '\ndemo OK: both rankings recover the true model order and the checks flag the planted biases\n'
+case "$audit" in
+  *"$EXPECT_AUDIT"*) ;;
+  *) echo "demo FAILED: the audit did not flag exactly the four planted annotators" >&2; exit 1 ;;
+esac
+printf '\ndemo OK: both rankings recover the true model order and the audit flags exactly the planted annotators\n'
