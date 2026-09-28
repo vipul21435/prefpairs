@@ -180,10 +180,11 @@ Delivered (decisions taken while building it):
   intervals are reported with a `separated` flag. Only regular pairs count by
   default (gold pairs are a small shared set picked for large quality gaps,
   controls are duplicates).
-- Self-consistency flags when the upper Wilson bound is below 0.5, the rate
+- Self-consistency flags when an exact one-sided binomial test, Holm-adjusted
+  across annotators at `alpha`, rejects a repeat rate of 0.5, the rate
   of a coin flipper: only a position habit makes a flipped repeat reverse the
   first answer systematically. It catches an annotator who mostly clicks left
-  (sharpness 0.3, position bias 3.0) in 10 of 10 seeds with a 0.5 control
+  (sharpness 0.3, position bias 3.0) in 10 of 10 seeds of the 60 x 8 simulation with a 0.5 control
   rate, but not the default left_biased archetype, whose repeats still agree
   more often than not because it also follows quality.
 - Added `prefpairs checks` (text and `--json`) and extended `make demo` to

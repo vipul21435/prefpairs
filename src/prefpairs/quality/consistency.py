@@ -9,11 +9,14 @@ its original, reports the share that match with a Wilson interval, and also
 counts ``n_same_side``: decisive repeats where the annotator clicked the same
 side both times, the fingerprint of a position habit.
 
-An annotator is flagged when the upper end of the interval is below
-``min_rate``: even the most favourable reading of the evidence says they
-agree with themselves less often than required. The default, 0.5, is the rate
-of an annotator who picks a side by coin flip; staying clearly below it means
-the repeat systematically reverses the first answer.
+An annotator is flagged when an exact one-sided binomial test rejects a
+repeat rate of ``min_rate`` in favour of a lower one (``P(X <= consistent)``
+with ``X ~ Binomial(compared, min_rate)``), after Holm-Bonferroni across the
+annotators with at least one compared control, at family-wise level
+``alpha``. The default, 0.5, is the rate of an annotator who picks a side by
+coin flip; staying clearly below it means the repeat systematically reverses
+the first answer. The Wilson interval is reported for reading, not for the
+flag.
 """
 
 from collections import defaultdict
@@ -22,7 +25,7 @@ from dataclasses import dataclass
 
 from pydantic import Field
 
-from prefpairs.quality.stats import wilson_interval
+from prefpairs.quality.stats import binom_lower_tail, holm_estimable, wilson_interval
 from prefpairs.schema import Choice, PairKind, PairwiseJudgment, Record
 
 DEFAULT_MIN_RATE = 0.5
@@ -44,10 +47,15 @@ class ConsistencyResult(Record):
     rate: float | None
     ci_lower: float
     ci_upper: float
+    p_value: float
+    """Exact one-sided binomial test of a repeat rate below ``min_rate``."""
+    p_adjusted: float
+    """Holm-Bonferroni across annotators with compared controls (1.0 for the rest)."""
     flagged: bool
 
 
 class ConsistencyReport(Record):
+    alpha: float = Field(gt=0, lt=1)
     confidence: float = Field(gt=0, lt=1)
     min_rate: float = Field(ge=0, le=1)
     results: tuple[ConsistencyResult, ...]
@@ -75,6 +83,7 @@ class _Tally:
 def self_consistency(
     judgments: Iterable[PairwiseJudgment],
     *,
+    alpha: float = 0.05,
     confidence: float = 0.95,
     min_rate: float = DEFAULT_MIN_RATE,
 ) -> ConsistencyReport:
@@ -99,8 +108,11 @@ def self_consistency(
         tally.consistent += control.label is original.label
         if control.choice in _DECISIVE and original.choice in _DECISIVE:
             tally.same_side += control.choice is original.choice
+    annotators = sorted(counts)
+    raw = [binom_lower_tail(counts[a].consistent, counts[a].compared, min_rate) for a in annotators]
+    adjusted = holm_estimable(raw, [counts[a].compared > 0 for a in annotators])
     results = []
-    for annotator in sorted(counts):
+    for annotator, p_value, p_adjusted in zip(annotators, raw, adjusted, strict=True):
         t = counts[annotator]
         lower, upper = wilson_interval(t.consistent, t.compared, confidence)
         results.append(
@@ -115,7 +127,11 @@ def self_consistency(
                 rate=t.consistent / t.compared if t.compared else None,
                 ci_lower=lower,
                 ci_upper=upper,
-                flagged=t.compared > 0 and upper < min_rate,
+                p_value=p_value,
+                p_adjusted=p_adjusted,
+                flagged=t.compared > 0 and p_adjusted <= alpha,
             )
         )
-    return ConsistencyReport(confidence=confidence, min_rate=min_rate, results=tuple(results))
+    return ConsistencyReport(
+        alpha=alpha, confidence=confidence, min_rate=min_rate, results=tuple(results)
+    )

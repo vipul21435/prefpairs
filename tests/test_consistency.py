@@ -1,9 +1,10 @@
 """Self-consistency on control repeats with the sides flipped."""
 
+import numpy as np
 import pytest
 
 from prefpairs.quality import self_consistency
-from prefpairs.quality.stats import wilson_interval
+from prefpairs.quality.stats import binom_lower_tail, wilson_interval
 from prefpairs.schema import PairKind, PairwiseJudgment
 from prefpairs.simulate import DEFAULT_PROFILES, Archetype, SimulationConfig, simulate
 from tests.quality_helpers import judgment
@@ -77,7 +78,10 @@ def test_a_position_habit_is_caught_on_simulated_data() -> None:
     )
     profiles = {**DEFAULT_PROFILES, Archetype.LEFT_BIASED: habit}
     for seed in range(10):
-        config = SimulationConfig(seed=seed, control_rate=0.5, profiles=profiles)
+        # About 80 controls each: enough power after the Holm correction.
+        config = SimulationConfig(
+            seed=seed, control_rate=0.5, profiles=profiles, n_prompts=60, pairs_per_prompt=8
+        )
         dataset = simulate(config)
         archetypes = dataset.truth.annotator_archetypes
         expected = tuple(a for a, k in archetypes.items() if k is Archetype.LEFT_BIASED)
@@ -93,3 +97,42 @@ def test_default_archetypes_rank_as_expected() -> None:
     left = [rate[a] for a, k in archetypes.items() if k is Archetype.LEFT_BIASED]
     assert min(reliable) > max(left)
     assert all(r.n_flipped == r.n_controls for r in report.results)
+
+
+def controls(annotator: str, n: int, n_consistent: int) -> list[PairwiseJudgment]:
+    """``n`` flipped controls; the first ``n_consistent`` repeat the original label."""
+    data = []
+    for i in range(n):
+        original = judgment(annotator, "a", "b", "left", prompt=f"p{i}")
+        data += [original, repeat(original, "right" if i < n_consistent else "left")]
+    return data
+
+
+def test_flag_is_an_exact_one_sided_test_at_alpha() -> None:
+    data = controls("ann-1", 30, 9)
+    (row,) = self_consistency(data).results
+    assert row.ci_upper < 0.5
+    assert row.p_value == pytest.approx(binom_lower_tail(9, 30, 0.5))
+    assert row.p_adjusted == row.p_value
+    assert self_consistency(data, alpha=0.05).flagged == ("ann-1",)
+    assert self_consistency(data, alpha=0.01).flagged == ()
+
+
+def test_consistency_flags_are_holm_adjusted_across_annotators() -> None:
+    borderline = controls("ann-1", 30, 9)
+    crowd = [j for i in range(39) for j in controls(f"ann-{i + 2:02d}", 30, 15)]
+    report = self_consistency(borderline + crowd)
+    row = next(r for r in report.results if r.annotator_id == "ann-1")
+    assert row.p_adjusted > 0.05
+    assert report.flagged == ()
+
+
+def test_family_wise_error_rate_at_the_boundary() -> None:
+    rng = np.random.default_rng(0)
+    runs, any_flag = 100, 0
+    for _ in range(runs):
+        data = []
+        for a in range(40):
+            data += controls(f"ann-{a:02d}", 30, int(rng.binomial(30, 0.5)))
+        any_flag += bool(self_consistency(data).flagged)
+    assert any_flag / runs <= 0.1

@@ -6,6 +6,7 @@ from fractions import Fraction
 import pytest
 
 from prefpairs.quality.stats import (
+    binom_lower_tail,
     binom_test,
     chi2_1_sf,
     holm,
@@ -131,3 +132,16 @@ def test_holm_estimable_adjusts_only_the_tested_entries() -> None:
     assert holm_estimable([], []) == []
     with pytest.raises(ValueError, match="same length"):
         holm_estimable([0.1], [])
+
+
+def test_binom_lower_tail_matches_exact_sums() -> None:
+    n, p = 12, Fraction(1, 3)
+    for k in range(n + 1):
+        exact = sum(math.comb(n, i) * p**i * (1 - p) ** (n - i) for i in range(k + 1))
+        assert binom_lower_tail(k, n, float(p)) == pytest.approx(float(exact), rel=1e-9)
+    assert binom_lower_tail(0, 0, 0.5) == 1.0
+    assert binom_lower_tail(3, 5, 0.0) == 1.0
+    assert binom_lower_tail(5, 5, 1.0) == 1.0
+    assert binom_lower_tail(4, 5, 1.0) == 0.0
+    with pytest.raises(ValueError, match="p must lie"):
+        binom_lower_tail(1, 2, 1.5)

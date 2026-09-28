@@ -9,7 +9,7 @@ one-line reason with the evidence for each flag.
 | --------------- | ------------------------------------------------------------------ |
 | position        | left/right split fails the exact binomial test (Holm, ``alpha``)   |
 | length          | length slope fails the likelihood-ratio test (Holm, ``alpha``)     |
-| consistency     | upper Wilson bound of control agreement is below 0.5              |
+| consistency     | control repeat rate fails the one-sided binomial test (Holm)       |
 | intransitive    | preference graph at least as cyclic as the median coin flipper    |
 | gold            | upper Wilson bound of gold accuracy is below ``min_gold_accuracy`` |
 | spammer         | Dawid-Skene spammer score below ``min_spammer_score``              |
@@ -123,8 +123,7 @@ def _reasons(report: AuditReport) -> dict[str, dict[str, str]]:
             (
                 r.annotator_id,
                 "consistency",
-                f"repeated own label {r.n_consistent} of "
-                f"{r.n_compared}, upper bound {r.ci_upper:.2f}",
+                f"repeated own label {r.n_consistent} of {r.n_compared}, p adj {_p(r.p_adjusted)}",
             )
             for r in checks.consistency.results
             if r.flagged
@@ -254,7 +253,7 @@ def render_audit(report: AuditReport) -> str:
     lines = [
         f"Annotator audit of {report.n_judgments} pairwise judgments from "
         f"{len(report.annotators)} annotators",
-        f"alpha {config.alpha} (Holm) for position and length; {pct} Wilson intervals",
+        f"alpha {config.alpha} (Holm) for position, length and consistency; {pct} Wilson intervals",
         "",
         f"gold:   accuracy on gold pairs (flag if the {pct} upper bound < "
         f"{config.min_gold_accuracy})",

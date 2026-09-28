@@ -6,6 +6,7 @@ Everything here is written on ``math`` and numpy, without scipy:
   probabilities of every outcome that is no more likely than the observed one
   (the "minimum likelihood" definition used by R's ``binom.test``), evaluated
   in log space so large counts neither overflow nor lose the tail.
+* ``binom_lower_tail``: the exact one-sided (lower) binomial tail.
 * ``holm``: Holm-Bonferroni step-down adjusted p-values. They control the
   family-wise error rate under any dependence between the tests, and are never
   larger than plain Bonferroni.
@@ -59,6 +60,24 @@ def binom_test(successes: int, n: int, p: float = 0.5) -> float:
     log_pmf = binom_log_pmf(n, p)
     threshold = log_pmf[successes] + math.log1p(RELATIVE_TOLERANCE)
     tail = log_pmf[log_pmf <= threshold]
+    top = float(tail.max())
+    return min(1.0, math.exp(top) * float(np.exp(tail - top).sum()))
+
+
+def binom_lower_tail(successes: int, n: int, p: float) -> float:
+    """Exact one-sided p-value ``P(X <= successes)`` with ``X ~ Binomial(n, p)``.
+
+    Returns 1.0 when ``n == 0`` (no evidence either way).
+    """
+    _check_counts(successes, n)
+    if not 0.0 <= p <= 1.0:
+        msg = f"p must lie in [0, 1], got {p}"
+        raise ValueError(msg)
+    if n == 0 or p == 0.0:
+        return 1.0
+    if p == 1.0:
+        return 1.0 if successes == n else 0.0
+    tail = binom_log_pmf(n, p)[: successes + 1]
     top = float(tail.max())
     return min(1.0, math.exp(top) * float(np.exp(tail - top).sum()))
 

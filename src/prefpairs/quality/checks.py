@@ -71,7 +71,7 @@ def run_checks(
             adjust_for_quality=adjust_for_quality,
         ),
         agreement=agreement(judgments),
-        consistency=self_consistency(judgments, confidence=confidence),
+        consistency=self_consistency(judgments, alpha=alpha, confidence=confidence),
         archetypes=archetypes,
     )
 
@@ -103,8 +103,8 @@ def render_checks(report: QualityChecks) -> str:
         "length:   log-odds per unit log word ratio, likelihood-ratio test"
         + (", adjusted for consensus quality" if report.length.adjust_for_quality else ""),
         "kappa:    Cohen's kappa with each co-annotator, weighted by shared items",
-        f"repeat:   same label on control repeats (flag if the {pct} upper bound < "
-        f"{report.consistency.min_rate})",
+        "repeat:   same label on control repeats, exact one-sided binomial test of a rate "
+        f"below {report.consistency.min_rate}",
         "",
     ]
     flag_text = {a: "+".join(flags.get(a, ())) or "-" for a in annotators}
