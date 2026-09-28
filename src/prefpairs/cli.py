@@ -20,6 +20,7 @@ from prefpairs.aggregate import (
     ResampleUnit,
 )
 from prefpairs.jsonl import JsonlError, read_records, write_records
+from prefpairs.quality.checks import render_checks, run_checks
 from prefpairs.ranking import Method, NothingToRankError, rank_store, render_rank_report
 from prefpairs.simulate import (
     Archetype,
@@ -46,7 +47,7 @@ STAGES = (
     ("store", "available: init, import, dump, stats"),
     ("simulate", "available: simulate"),
     ("aggregate", "available: rank"),
-    ("audit", "planned"),
+    ("audit", "available: checks (combined audit report planned)"),
     ("collect", "planned"),
     ("export", "planned"),
 )
@@ -234,6 +235,58 @@ def dump(
     typer.echo(f"wrote {count} records to {out}")
 
 
+def _load_truth_file(path: Path | None) -> SimulationTruth | None:
+    if path is None:
+        return None
+    return SimulationTruth.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+TruthOption = Annotated[
+    Path | None,
+    typer.Option(
+        exists=True,
+        dir_okay=False,
+        help="Ground-truth JSON from `simulate --truth-out` (default: the one stored).",
+    ),
+]
+
+
+@app.command()
+def checks(
+    *,
+    db: DbOption = DEFAULT_DB,
+    alpha: Annotated[
+        float, typer.Option(min=0.0001, max=0.5, help="Family-wise error rate per check.")
+    ] = 0.05,
+    confidence: Annotated[
+        float, typer.Option(min=0.5, max=0.999, help="Interval coverage level.")
+    ] = 0.95,
+    quality_adjustment: Annotated[
+        bool,
+        typer.Option(help="Control the length test for consensus model quality."),
+    ] = True,
+    truth: TruthOption = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Print JSON instead of text.")] = False,
+) -> None:
+    """Test every annotator for position and length bias, agreement and self-consistency."""
+    with _reported_errors():
+        known = _load_truth_file(truth)
+        with Store.open(db, create=False) as store:
+            if known is None:
+                known = load_truth(store)
+            report = run_checks(
+                store,
+                alpha=alpha,
+                confidence=confidence,
+                adjust_for_quality=quality_adjustment,
+                truth=known,
+            )
+    if as_json:
+        typer.echo(json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True))
+    else:
+        typer.echo(render_checks(report))
+
+
 @app.command()
 def rank(
     *,
@@ -265,14 +318,7 @@ def rank(
     include_ranked: Annotated[
         bool, typer.Option(help="Also expand ranked judgments into implied pairs.")
     ] = False,
-    truth: Annotated[
-        Path | None,
-        typer.Option(
-            exists=True,
-            dir_okay=False,
-            help="Ground-truth JSON from `simulate --truth-out` (default: the one stored).",
-        ),
-    ] = None,
+    truth: TruthOption = None,
     as_json: Annotated[bool, typer.Option("--json", help="Print JSON instead of text.")] = False,
 ) -> None:
     """Rank models or responses with bootstrap confidence intervals."""
@@ -285,11 +331,7 @@ def rank(
         bootstrap = BootstrapConfig(
             n_replicates=replicates, unit=resample, level=confidence, seed=seed
         )
-        known = (
-            SimulationTruth.model_validate_json(truth.read_text(encoding="utf-8"))
-            if truth is not None
-            else None
-        )
+        known = _load_truth_file(truth)
         with Store.open(db, create=False) as store:
             if known is None:
                 known = load_truth(store)
