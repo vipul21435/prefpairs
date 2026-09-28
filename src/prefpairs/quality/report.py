@@ -286,6 +286,12 @@ def render_audit(report: AuditReport) -> str:
             row += f"  {audit.planted or '?'}"
         lines.append(row.rstrip())
     lines.append("")
+    if report.gold.n_unmatched:
+        lines += [
+            f"note: {report.gold.n_unmatched} gold judgments match no gold pair and were "
+            "not scored",
+            "",
+        ]
     for audit in report.annotators:
         for flag, reason in zip(audit.flags, audit.reasons, strict=True):
             lines.append(f"{audit.annotator_id} {flag}: {reason}")

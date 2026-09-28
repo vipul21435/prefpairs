@@ -139,13 +139,23 @@ def test_every_flag_kind_has_a_reason() -> None:
     }
 
 
-def test_small_store_without_gold_renders() -> None:
+def test_small_store_renders() -> None:
     with Store.open(":memory:") as store:
         store.add_all(build_records())
         report = run_audit(store)
     text = render_audit(report)
     assert text.splitlines()[-1] == "flagged: none"
     assert report.flagged == ()
+    assert report.gold.n_unmatched == 0
+
+
+def test_gold_judgments_without_gold_records_are_reported() -> None:
+    records = [r for r in build_records() if type(r).__name__ != "GoldPair"]
+    with Store.open(":memory:") as store:
+        store.add_all(records)
+        report = run_audit(store)
+    assert report.gold.n_unmatched == 1
+    assert "note: 1 gold judgments match no gold pair and were not scored" in render_audit(report)
 
 
 def test_empty_store_renders_without_rows() -> None:

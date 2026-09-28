@@ -277,7 +277,7 @@ laptop, Python 3.12).
 
 | What | Result | Reproduce |
 | --- | --- | --- |
-| Tests | 440 passed | `make cov` |
+| Tests | 441 passed | `make cov` |
 | Branch coverage | 99.91% (gate: 85%) | `make cov` |
 | Ranking recovery on the bundled sample | Kendall tau 1.000 for Bradley-Terry and for Elo | `make demo` |
 | Annotator checks on the bundled sample | flag exactly `ann-10` (planted left_biased) and `ann-11` (planted length_biased) | `make demo` |

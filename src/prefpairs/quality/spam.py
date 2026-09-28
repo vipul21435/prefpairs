@@ -71,6 +71,8 @@ class GoldReport(Record):
     confidence: float = Field(gt=0, lt=1)
     min_accuracy: float = Field(ge=0, le=1)
     n_gold_pairs: int
+    n_unmatched: int
+    """Gold judgments whose prompt and responses match no gold pair (not scored)."""
     results: tuple[GoldAccuracy, ...]
 
     @property
@@ -87,14 +89,19 @@ def gold_accuracy(
 ) -> GoldReport:
     """Score every gold judgment against the gold pair on the same prompt and responses.
 
-    Raises KeyError for a gold judgment that matches no gold pair.
+    A gold judgment that matches no gold pair (for example, imported without
+    its gold record) cannot be scored; it is counted in ``n_unmatched``.
     """
     expected = {(g.prompt_id, *g.canonical_pair): g.expected_label for g in gold_pairs}
     counts: dict[str, Counter[str]] = defaultdict(Counter)
+    unmatched = 0
     for j in judgments:
         if j.pair_kind is not PairKind.GOLD:
             continue
-        answer = expected[(j.prompt_id, *j.canonical_pair)]
+        answer = expected.get((j.prompt_id, *j.canonical_pair))
+        if answer is None:
+            unmatched += 1
+            continue
         tally = counts[j.annotator_id]
         tally["gold"] += 1
         label = j.label
@@ -126,6 +133,7 @@ def gold_accuracy(
         confidence=confidence,
         min_accuracy=min_accuracy,
         n_gold_pairs=len(expected),
+        n_unmatched=unmatched,
         results=tuple(results),
     )
 

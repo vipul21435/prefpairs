@@ -51,9 +51,11 @@ class TestGoldAccuracy:
         assert result.accuracy is None
         assert not result.flagged
 
-    def test_unknown_gold_pair_is_an_error(self) -> None:
-        with pytest.raises(KeyError):
-            gold_accuracy([judgment("x", "p1-a", "p1-c", "left", kind=PairKind.GOLD)], [GOLD])
+    def test_gold_judgment_without_a_gold_pair_is_counted_not_scored(self) -> None:
+        stray = judgment("x", "p1-a", "p1-c", "left", kind=PairKind.GOLD)
+        report = gold_accuracy([stray], [GOLD])
+        assert report.n_unmatched == 1
+        assert report.results == ()
 
 
 def _planted(seed: int, accuracies: list[float], n_items: int = 400) -> tuple[np.ndarray, ...]:
