@@ -3,15 +3,18 @@
 [![CI](https://github.com/vipul21435/prefpairs/actions/workflows/ci.yml/badge.svg)](https://github.com/vipul21435/prefpairs/actions/workflows/ci.yml)
 
 RLHF preference-data toolkit: store pairwise judgments with full provenance,
-generate synthetic data with known ground truth, and rank models or responses
-with Bradley-Terry and Elo plus cluster-bootstrap confidence intervals, then
-check the ranking against the truth.
+generate synthetic data with known ground truth, test every annotator for
+position bias, length bias, agreement and self-consistency, and rank models or
+responses with Bradley-Terry and Elo plus cluster-bootstrap confidence
+intervals, then check the ranking against the truth.
 
-> Status: slices 1 and 2 of 8 are done (data model and store, simulator,
-> aggregation with intervals, the `rank` command), plus a Docker image and an
-> end-to-end `make demo`. Annotator quality checks, a collection UI and
-> DPO/KTO/reward-model export are **not built yet**; they are listed under
-> [Roadmap](#roadmap) and specified in [PLAN.md](PLAN.md).
+> Status: slices 1 to 3 of 8 are done (data model and store, simulator,
+> aggregation with intervals and the `rank` command, annotator bias and
+> agreement checks with the `checks` command), plus a Docker image and an
+> end-to-end `make demo`. The combined audit report (transitivity, gold
+> accuracy, spammer detection), a collection UI and DPO/KTO/reward-model export
+> are **not built yet**; they are listed under [Roadmap](#roadmap) and
+> specified in [PLAN.md](PLAN.md).
 
 ## Why this exists
 
@@ -35,6 +38,7 @@ deterministic and every number is reproducible.
 | Schema and store | Prompts, candidate responses with provenance, pairwise and ranked judgments, rationales, annotator sessions, gold pairs | pydantic v2 models over SQLite with versioned migrations, foreign keys and triggers | `init`, `import`, `dump`, `stats` |
 | Simulate | Synthetic data with known model strengths and annotators with planted noise and bias | seeded generative model with analytic choice probabilities | `simulate` |
 | Aggregate | Ranking of models or responses with uncertainty | Bradley-Terry (MM algorithm, numpy only), Elo averaged over seeded game orders, prompt-level cluster bootstrap, percentile intervals for values and ranks, empirical vs predicted win rates | `rank` |
+| Annotator checks | Position bias, length (verbosity) bias, inter-annotator agreement, self-consistency on flipped control repeats; each a typed result with its statistic, p-value or interval and evidence counts | exact two-sided binomial test with Holm-Bonferroni; Newton/IRLS logistic regression with a likelihood-ratio test, controlled for consensus quality; Cohen and Fleiss kappa on canonical labels; Wilson intervals | `checks` |
 | Package | Reproducible runtime and demo | digest-pinned `python:3.12-slim`, uv, non-root user | `make demo`, `make docker-demo` |
 
 ## Quickstart
@@ -44,12 +48,13 @@ Requires [uv](https://docs.astral.sh/uv/), Git and make.
 ```bash
 git clone https://github.com/vipul21435/prefpairs.git && cd prefpairs
 uv sync --frozen        # Python 3.12 venv from uv.lock
-make demo               # import bundled sample, stats, rank with CIs, check recovery
+make demo               # import bundled sample, stats, rank with CIs, annotator checks
 make check              # ruff, mypy --strict, pytest with branch coverage
 ```
 
-These commands were run in a fresh clone; `make demo` ends with
-`demo OK: both rankings recover the true model order`. With Docker instead of uv:
+`make demo` ends with `demo OK: both rankings recover the true model order and
+the checks flag the planted biases`, and fails if either part does not hold.
+With Docker instead of uv:
 
 ```bash
 docker build -t prefpairs . && docker run --rm --entrypoint sh prefpairs scripts/demo.sh
@@ -65,6 +70,7 @@ docker build -t prefpairs . && docker run --rm --entrypoint sh prefpairs scripts
 | `prefpairs stats --db PATH [--json]` | record counts, choice and pair-kind mix, per-model responses, annotator load |
 | `prefpairs dump --db PATH [--out FILE]` | canonical JSONL of every record |
 | `prefpairs rank --db PATH [--method bt\|elo] [--level model\|response] [--replicates N] [--resample prompt\|judgment] [--confidence 0.95] [--prior 0.1] [-x ANNOTATOR ...] [--include-ranked] [--truth FILE] [--json]` | ranking with bootstrap intervals, fit gap, and Kendall tau against the truth when it is known |
+| `prefpairs checks --db PATH [--alpha 0.05] [--confidence 0.95] [--no-quality-adjustment] [--truth FILE] [--json]` | per-annotator position, length, agreement and self-consistency checks, with the planted archetype when the truth is known |
 | `prefpairs info` | version and which pipeline stages are available |
 
 `--db` defaults to `.prefpairs/prefpairs.db` and can be set with `PREFPAIRS_DB`.
@@ -120,6 +126,49 @@ replicates), so a report that crowned `model-a` outright would overclaim.
 Gold and control pairs are quality checks, not extra evidence, so they are
 left out (`pair_kind 192`), and skips carry no preference.
 
+The same `make demo` run then checks every annotator:
+
+```text
+$ prefpairs checks --truth examples/sample-truth.json
+Annotator checks on 672 pairwise judgments from 12 annotators
+alpha 0.05 after Holm-Bonferroni across annotators; 95% intervals
+
+position: exact binomial test of left vs right on decisive choices
+length:   log-odds per unit log word ratio, likelihood-ratio test, adjusted for consensus quality
+kappa:    Cohen's kappa with each co-annotator, weighted by shared items
+repeat:   same label on control repeats (flag if the 95% upper bound < 0.5)
+
+annotator   left:right    p adj  length    p adj   kappa  repeat        95% CI  flags     planted
+ann-01           28:26    1.000   +0.05    1.000  +0.406     4/4  [0.51, 1.00]  -         reliable
+ann-02           29:26    1.000   -0.65    1.000  +0.398     2/4  [0.15, 0.85]  -         noisy
+ann-03           25:28    1.000   +0.77    1.000  +0.523     4/4  [0.51, 1.00]  -         reliable
+ann-04           21:33    1.000   +0.40    1.000  +0.546     4/4  [0.51, 1.00]  -         reliable
+ann-05           31:24    1.000   +0.86    1.000  +0.550     2/3  [0.21, 0.94]  -         reliable
+ann-06           32:24    1.000   -0.53    1.000  -0.644     4/4  [0.51, 1.00]  -         adversarial
+ann-07           24:27    1.000   -0.12    1.000  +0.387     3/3  [0.44, 1.00]  -         noisy
+ann-08           28:28    1.000   -0.16    1.000  +0.112     2/4  [0.15, 0.85]  -         random_spammer
+ann-09           27:28    1.000   -0.71    1.000  +0.595     3/4  [0.30, 0.95]  -         reliable
+ann-10           43:13  8.8e-04   +0.14    1.000  +0.421     2/4  [0.15, 0.85]  position  left_biased
+ann-11           24:29    1.000   +1.92    0.005  +0.401     2/3  [0.21, 0.94]  length    length_biased
+ann-12           27:26    1.000   -0.39    1.000  +0.492     4/4  [0.51, 1.00]  -         reliable
+
+pooled: left:right 339:312 (p 0.308), length +0.13 (p 0.393)
+Fleiss kappa over 154 items with 3 labels each (18 items with another count left out): 0.290
+flagged: ann-10 (position), ann-11 (length)
+```
+
+How to read it: `ann-10` chose the left response 43 times out of 56 decisive
+choices; the exact binomial p-value, multiplied through Holm-Bonferroni over 12
+annotators, is still 8.8e-04. `ann-11`'s length coefficient of +1.92 means a
+response twice as long gets about `exp(1.92 * ln 2) = 3.8` times the odds of
+being chosen, after controlling for position and for the consensus quality of
+the two models. The adversarial `ann-06` is the only annotator with negative
+agreement (kappa -0.644) and the random spammer `ann-08` sits near zero
+(+0.112); neither is a position or length problem, so neither is flagged here:
+turning agreement, gold accuracy and a spammer score into verdicts is the
+audit of slice 4. With 3 or 4 compared controls per annotator, the
+self-consistency intervals are too wide to flag anyone on this sample.
+
 ## Architecture
 
 ```mermaid
@@ -129,6 +178,8 @@ flowchart LR
     S -->|dump| J
     S --> C[build_comparisons<br/>canonical games, clustered by prompt,<br/>drop reasons counted]
     C --> BT[Bradley-Terry<br/>MM fit with prior]
+    S --> Q[annotator checks<br/>position, length, kappa,<br/>self-consistency]
+    BT -->|consensus quality| Q
     C --> E[Elo<br/>mean over seeded orders]
     C --> B[cluster bootstrap<br/>replicate weights]
     B --> BT
@@ -152,6 +203,13 @@ flowchart LR
 | `aggregate/bootstrap.py` | prompt or judgment resampling, percentile intervals, rank intervals |
 | `aggregate/winrate.py` | empirical and model-implied win-rate matrices |
 | `ranking.py` | the `rank` report and Kendall tau |
+| `quality/stats.py` | exact binomial test, Holm-Bonferroni, Wilson interval, normal and chi-square tails |
+| `quality/position.py` | per-annotator and pooled position-bias tests |
+| `quality/logistic.py` | Newton/IRLS logistic regression, likelihood-ratio test, separation detection |
+| `quality/length.py` | length-bias regression with a leave-one-annotator-out quality covariate |
+| `quality/agreement.py` | Cohen and Fleiss kappa on canonical labels |
+| `quality/consistency.py` | self-consistency on control repeats |
+| `quality/checks.py` | the `checks` report |
 | `cli.py` | Typer commands |
 
 ## Measured numbers
@@ -161,12 +219,40 @@ laptop, Python 3.12).
 
 | What | Result | Reproduce |
 | --- | --- | --- |
-| Tests | 292 passed | `make cov` |
-| Branch coverage | 99.91% (gate: 85%) | `make cov` |
+| Tests | 398 passed | `make cov` |
+| Branch coverage | 99.93% (gate: 85%) | `make cov` |
 | Ranking recovery on the bundled sample | Kendall tau 1.000 for Bradley-Terry and for Elo | `make demo` |
-| End-to-end demo wall time | about 1.1 s | `time make demo` |
+| Annotator checks on the bundled sample | flag exactly `ann-10` (planted left_biased) and `ann-11` (planted length_biased) | `make demo` |
+| End-to-end demo wall time | 1.2 to 1.4 s over two runs | `time make demo` |
 | One `rank` with 500 bootstrap replicates | about 0.2 s | `time uv run prefpairs rank --db .prefpairs/demo.db` (after `make demo`) |
+| One `checks` on the sample (672 judgments) | about 0.3 s | `time uv run prefpairs checks --db .prefpairs/demo.db` (after `make demo`) |
 | Docker image size | 327 MB on disk, 71 MB content (compressed) | `make docker && docker image ls prefpairs:local` |
+
+How often each check flags each archetype, from `uv run python
+scripts/detection_rates.py --seeds 20` (flagged / simulated annotators over
+seeds 0-19, alpha 0.05 with Holm-Bonferroni, default archetype profiles):
+
+| Size | Archetype | position | length | consistency | any |
+| --- | --- | --- | --- | --- | --- |
+| 40 prompts x 4 pairs (default) | reliable | 0/120 | 1/120 | 0/120 | 1/120 |
+| | noisy | 0/40 | 0/40 | 0/40 | 0/40 |
+| | left_biased | 7/20 | 0/20 | 0/20 | 7/20 |
+| | length_biased | 0/20 | 16/20 | 0/20 | 16/20 |
+| | random_spammer | 0/20 | 0/20 | 1/20 | 1/20 |
+| | adversarial | 0/20 | 0/20 | 0/20 | 0/20 |
+| 60 prompts x 8 pairs | reliable | 0/120 | 1/120 | 0/120 | 1/120 |
+| | noisy | 0/40 | 0/40 | 0/40 | 0/40 |
+| | left_biased | 20/20 | 0/20 | 0/20 | 20/20 |
+| | length_biased | 0/20 | 20/20 | 0/20 | 20/20 |
+| | random_spammer | 0/20 | 0/20 | 0/20 | 0/20 |
+| | adversarial | 0/20 | 0/20 | 0/20 | 0/20 |
+
+At the default size an annotator makes about 55 decisive choices, and the
+planted left-biased annotator still reads the answers (its choices follow
+quality as well as position), so the model-free binomial test finds it in only
+7 of 20 seeds; with about 140 choices each it finds it every time. Random
+spammers and adversarial annotators are not position- or length-driven and
+are left to the slice-4 audit.
 
 Statistical properties are pinned by tests rather than quoted: the
 Bradley-Terry score equations hold at the solution and the log-likelihood never
@@ -175,7 +261,14 @@ stored order of judgments (`tests/test_elo.py`); bootstrap intervals shrink
 roughly as one over root n, 95% intervals cover the true strengths in 85% to
 100% of 200 cases drawn from the model, and prompt-level resampling widens
 intervals when judgments on a prompt are correlated
-(`tests/test_bootstrap.py`).
+(`tests/test_bootstrap.py`). The binomial test matches exact rational
+arithmetic to 1e-12 (`tests/test_quality_stats.py`); the logistic MLE with one
+binary covariate equals the 2x2 log odds ratio and its standard error equals
+Woolf's (`tests/test_logistic.py`); Cohen and Fleiss kappa match exact
+fractions to 1e-12, and Fleiss with two raters equals Scott's pi
+(`tests/test_agreement.py`); on the 60 x 8 simulation the three checks
+together flag exactly the left_biased and length_biased annotators for seeds
+0-9 (`tests/test_quality_simulated.py`).
 
 ## Design decisions
 
@@ -203,6 +296,19 @@ intervals when judgments on a prompt are correlated
 - **Determinism.** Every random choice goes through a seeded
   `numpy.random.Generator`; the same seed gives the same database, dump and
   report, and the bundled sample is regenerated byte for byte in a test.
+- **Every bias test is corrected for multiple testing.** One test per
+  annotator is a family, so p-values are Holm-Bonferroni adjusted before
+  anyone is flagged; a pooled test is reported separately, because a pooled
+  effect with no single annotator flagged points at the interface.
+- **Length bias is tested conditional on quality.** In real data longer
+  answers are often better, so the regression includes the consensus quality
+  gap of the two models, fitted by Bradley-Terry on everyone else's judgments.
+  A length-driven annotator pulls verbose models up in that consensus, so the
+  fit runs a second round with first-round flags left out of it. The test is a
+  likelihood-ratio test, which, unlike the Wald test, stays valid when the data
+  are separated; separation is detected and reported.
+- **Agreement is on canonical labels.** Kappa compares what a judgment means
+  (which response won, on the id-sorted pair), not which side was clicked.
 - **Integrity in the database as well as in Python.** Composite foreign keys
   tie a judgment's responses to its prompt, a trigger requires a control to
   repeat an earlier judgment of the same annotator on the same pair, and
@@ -269,14 +375,14 @@ be tested for what it is supposed to find:
   annotators with balanced load, everyone sees the gold pairs, and a share of
   each annotator's pairs comes back later as a control with the sides flipped.
 
-| Archetype | beta | position bias | length weight | Should be flagged by the (planned) audit |
-| --- | --- | --- | --- | --- |
-| reliable | 3.0 | 0 | 0 | no |
-| noisy | 0.9 | 0 | 0 | no (down-weighted, not flagged) |
-| left_biased | 2.0 | +2.0 | 0 | yes |
-| length_biased | 1.0 | 0 | 3.0 | yes |
-| random_spammer | 0 | 0 | 0 | yes |
-| adversarial | -2.0 | 0 | 0 | yes |
+| Archetype | beta | position bias | length weight | Should be flagged | Caught today by |
+| --- | --- | --- | --- | --- | --- |
+| reliable | 3.0 | 0 | 0 | no | - |
+| noisy | 0.9 | 0 | 0 | no (down-weighted, not flagged) | - |
+| left_biased | 2.0 | +2.0 | 0 | yes | `checks`: position (self-consistency for a stronger habit) |
+| length_biased | 1.0 | 0 | 3.0 | yes | `checks`: length |
+| random_spammer | 0 | 0 | 0 | yes | planned audit (gold accuracy, Dawid-Skene) |
+| adversarial | -2.0 | 0 | 0 | yes | planned audit (negative kappa is already visible) |
 
 ## Development
 
@@ -299,9 +405,6 @@ is needed.
 
 Not built yet, in the order of [PLAN.md](PLAN.md):
 
-- **Annotator bias and agreement checks (slice 3):** exact binomial test for
-  position bias with Holm-Bonferroni, logistic regression for length bias,
-  Cohen and Fleiss kappa, self-consistency on control repeats.
 - **Transitivity, spammer detection and `prefpairs audit` (slice 4):** cycle
   counts in per-annotator preference graphs, gold accuracy, Dawid-Skene EM, and
   a per-annotator report that must flag exactly the planted annotators.

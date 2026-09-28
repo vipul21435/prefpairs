@@ -140,7 +140,7 @@ Delivered (decisions taken while building it):
 - Known limitation: response-level ranking uses dense per-replicate matrices
   and is slow for hundreds of responses; a sparse fit belongs in slice 8.
 
-### Slice 3: Annotator bias and agreement checks
+### Slice 3: Annotator bias and agreement checks [x] done
 
 Goal: detect the first family of low-quality annotation: position bias with an exact two-sided binomial test, length/verbosity bias with a numpy logistic regression of choice on length difference, inter-annotator agreement with Cohen and Fleiss kappa, and self-consistency on repeated control pairs; each check returns a typed result with its statistic, p-value or interval, and the evidence counts.
 
@@ -158,6 +158,39 @@ Commits:
 4. `feat(quality)`: self-consistency rate on control repeats (sides flipped) with
    a Wilson interval; synthetic test that the left-biased and length-biased
    archetypes are flagged and reliable annotators are not.
+
+Delivered (decisions taken while building it):
+
+- Position bias counts every pair kind (gold and control pairs are shown in a
+  randomised order too) and reports a pooled test next to the per-annotator
+  ones. At the default simulation size (about 55 decisive choices per
+  annotator) the model-free binomial test finds the planted left-biased
+  annotator in 7 of 20 seeds, because that archetype still follows quality;
+  at 60 prompts x 8 pairs it finds it in 20 of 20
+  (`scripts/detection_rates.py`).
+- Length bias needed three changes before it was calibrated on simulated
+  data with no length-driven annotators: (1) a consensus quality covariate
+  (leave-one-annotator-out Bradley-Terry model strengths), because model pairs
+  tie length to quality in any finite sample; (2) a second round that refits
+  the consensus without first-round flags, because a length-driven annotator
+  pulls verbose models up and makes honest annotators look anti-length; and
+  (3) a unit-variance normal prior on the slopes, because careful annotators
+  follow consensus quality so closely that their data are nearly separated.
+  The decision uses a likelihood-ratio test, which survives separation; Wald
+  intervals are reported with a `separated` flag. Only regular pairs count by
+  default (gold pairs are a small shared set picked for large quality gaps,
+  controls are duplicates).
+- Self-consistency flags when the upper Wilson bound is below 0.5, the rate
+  of a coin flipper: only a position habit makes a flipped repeat reverse the
+  first answer systematically. It catches an annotator who mostly clicks left
+  (sharpness 0.3, position bias 3.0) in 10 of 10 seeds with a 0.5 control
+  rate, but not the default left_biased archetype, whose repeats still agree
+  more often than not because it also follows quality.
+- Added `prefpairs checks` (text and `--json`) and extended `make demo` to
+  require that it flags exactly the planted left_biased and length_biased
+  annotators of the bundled sample, plus `scripts/detection_rates.py` for the
+  power table in the README. Flags are per check; the combined verdict is
+  slice 4.
 
 ### Slice 4: Transitivity, spammer detection and the audit report
 
