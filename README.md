@@ -6,15 +6,16 @@ RLHF preference-data toolkit: store pairwise judgments with full provenance,
 generate synthetic data with known ground truth, audit every annotator
 (position bias, length bias, agreement, self-consistency, transitivity, gold
 accuracy, Dawid-Skene spammer score) into one flagged-or-not verdict with
-reasons, and rank models or responses with Bradley-Terry and Elo plus
+reasons, rank models or responses with Bradley-Terry and Elo plus
 cluster-bootstrap confidence intervals, then check the ranking against the
-truth.
+truth, and export DPO, KTO and reward-model JSONL from the unflagged
+annotators with leak-free prompt-level splits and a dataset card.
 
-> Status: slices 1 to 4 of 8 are done (data model and store, simulator,
-> aggregation with intervals and the `rank` command, annotator checks, and the
-> combined `audit` report), plus a Docker image and an end-to-end `make demo`.
-> A collection UI and DPO/KTO/reward-model export are **not built yet**; they
-> are listed under [Roadmap](#roadmap) and specified in [PLAN.md](PLAN.md).
+> Status: slices 1 to 4 and 6 of 8 are done (data model and store, simulator,
+> aggregation with intervals and the `rank` command, annotator checks, the
+> combined `audit` report, and `export`), plus a Docker image and an
+> end-to-end `make demo`. A collection UI is **not built yet**; it is listed
+> under [Roadmap](#roadmap) and specified in [PLAN.md](PLAN.md).
 
 ## Why this exists
 
@@ -40,6 +41,7 @@ deterministic and every number is reproducible.
 | Aggregate | Ranking of models or responses with uncertainty | Bradley-Terry (MM algorithm, numpy only), Elo averaged over seeded game orders, prompt-level cluster bootstrap, percentile intervals for values and ranks, empirical vs predicted win rates | `rank` |
 | Annotator checks | Position bias, length (verbosity) bias, inter-annotator agreement, self-consistency on flipped control repeats; each a typed result with its statistic, p-value or interval and evidence counts | exact two-sided binomial test with Holm-Bonferroni; Newton/IRLS logistic regression with a likelihood-ratio test, controlled for consensus quality; Cohen and Fleiss kappa on canonical labels; Wilson intervals | `checks` |
 | Audit | Every check above plus transitivity, gold accuracy and a spammer score, combined into a per-annotator verdict with one line of evidence per flag; `--strict` exits 1 when anyone is flagged | preference digraphs with iterative Tarjan SCC and 3-cycle counts against seeded random re-orientations; gold accuracy with a Wilson bound; Dawid-Skene EM (one-coin or full confusion matrices) with the Raykar-Yu spammer score | `audit` |
+| Export | Votes aggregated per pair from unflagged annotators with auditable filters (min votes, min agreement, drop ties); DPO, KTO and reward-model JSONL; dataset card in Markdown and JSON with provenance, drop counts, split stats and the sha256 of every file | canonical-pair vote counts with a drop reason per pair; prompt-level splits from a salted sha256, so no prompt is in two splits and reruns are byte-identical | `export` |
 | Package | Reproducible runtime and demo | digest-pinned `python:3.12-slim`, uv, non-root user | `make demo`, `make docker-demo` |
 
 ## Quickstart
@@ -49,13 +51,14 @@ Requires [uv](https://docs.astral.sh/uv/), Git and make.
 ```bash
 git clone https://github.com/vipul21435/prefpairs.git && cd prefpairs
 uv sync --frozen        # Python 3.12 venv from uv.lock
-make demo               # import bundled sample, stats, rank with CIs, checks, audit
+make demo               # import bundled sample, stats, rank with CIs, checks, audit, export
 make check              # ruff, mypy --strict, pytest with branch coverage
 ```
 
-`make demo` ends with `demo OK: both rankings recover the true model order and
-the audit flags exactly the planted annotators`, and fails if any part does not
-hold (it also requires `audit --strict` to exit 1 on the sample).
+`make demo` ends with `demo OK: both rankings recover the true model order, the
+audit flags exactly the planted annotators and the export is reproducible`, and
+fails if any part does not hold (it also requires `audit --strict` to exit 1 on
+the sample and a second DPO export to be byte-identical to the first).
 With Docker instead of uv:
 
 ```bash
@@ -74,6 +77,7 @@ docker build -t prefpairs . && docker run --rm --entrypoint sh prefpairs scripts
 | `prefpairs rank --db PATH [--method bt\|elo] [--level model\|response] [--replicates N] [--resample prompt\|judgment] [--confidence 0.95] [--prior 0.1] [-x ANNOTATOR ...] [--include-ranked] [--truth FILE] [--json]` | ranking with bootstrap intervals, fit gap, and Kendall tau against the truth when it is known |
 | `prefpairs checks --db PATH [--alpha 0.05] [--confidence 0.95] [--no-quality-adjustment] [--truth FILE] [--json]` | per-annotator position, length, agreement and self-consistency checks, with the planted archetype when the truth is known |
 | `prefpairs audit --db PATH [--alpha 0.05] [--confidence 0.95] [--min-gold-accuracy 0.7] [--min-spammer-score 0.1] [--seed 0] [--truth FILE] [--strict] [--json]` | combined per-annotator verdicts with the reason for every flag; `--strict` exits 1 when anyone is flagged |
+| `prefpairs export --db PATH [--format dpo\|kto\|rm] [--out DIR] [--min-votes 1] [--min-agreement 0.5] [--keep-ties] [-x ANNOTATOR ...] [--no-audit] [--train 0.8] [--validation 0.1] [--salt S]` | training data under `DIR/<format>/` (`train`, `validation`, `test` JSONL plus `card.md` and `card.json`); by default the audit runs first and every flagged annotator is left out |
 | `prefpairs info` | version and which pipeline stages are available |
 
 `--db` defaults to `.prefpairs/prefpairs.db` and can be set with `PREFPAIRS_DB`.
@@ -221,6 +225,64 @@ has 4 cyclic triads out of 13, more than the median coin flipper with the same
 comparisons. Its gold accuracy of 7/12 is not low enough to flag on its own
 with 12 gold pairs, which is why the audit combines independent views.
 
+The demo then exports training data from the annotators the audit did not
+flag (the same run, for each of `dpo`, `kto` and `rm`):
+
+```text
+$ prefpairs export --format dpo --out .prefpairs/demo-export
+kept 142 of 160 pairs (dropped: no_votes 3, too_few_votes 0, tie 15, low_agreement 4); excluded annotators: ann-06, ann-08, ann-10, ann-11
+.prefpairs/demo-export/dpo/train.jsonl    116 rows  sha256 4c222f831ccc025f
+.prefpairs/demo-export/dpo/validation.jsonl      7 rows  sha256 59789124338dede0
+.prefpairs/demo-export/dpo/test.jsonl     19 rows  sha256 1334137d36f37400
+card: .prefpairs/demo-export/dpo/card.md and card.json
+
+$ prefpairs export --format kto --out .prefpairs/demo-export
+...
+.prefpairs/demo-export/kto/train.jsonl    141 rows  sha256 0611394916a544c9
+.prefpairs/demo-export/kto/validation.jsonl      8 rows  sha256 e5771c41726bcd2f
+.prefpairs/demo-export/kto/test.jsonl     24 rows  sha256 65ed5c6ac01022e5
+...
+rerun: every DPO file and card is byte-identical
+```
+
+An excerpt of the generated `dpo/card.md`:
+
+```text
+## Pairs
+
+142 of 160 pairs kept; 315 votes counted, 158 set aside from excluded annotators.
+
+| drop reason | pairs |
+| --- | --- |
+| no_votes | 3 |
+| too_few_votes | 0 |
+| tie | 15 |
+| low_agreement | 4 |
+
+Kept pairs: 2.01 votes on average, mean agreement 0.964.
+
+## Splits
+
+Prompt-level, by sha256 of `prefpairs:<prompt_id>`: train 0.8, validation 0.1, test 0.1. No prompt appears in two splits.
+
+| split | prompts | pairs |
+| --- | --- | --- |
+| train | 33 | 116 |
+| validation | 2 | 7 |
+| test | 5 | 19 |
+```
+
+How to read it: 158 of the 473 non-skip votes came from the four flagged
+annotators and were set aside. Of the 160 regular pairs, 3 had votes only from
+flagged annotators, 15 were split evenly and 4 had a winner holding less than
+half of the counted votes (ties included). The 40 prompts fall 33/2/5 into the
+splits by hash rather than exactly 80/10/10, the price of a split that never
+moves when data is added; `--salt` draws a different one. Each DPO row carries
+`prompt`, `chosen`, `rejected`, the ids, `n_votes` and `agreement`; each KTO row
+a `completion` with a boolean `label` (a response that won as many kept pairs
+as it lost is left out; 173 KTO rows in all); each RM row the canonical pair with
+the soft label `p_a`.
+
 ## Architecture
 
 ```mermaid
@@ -244,6 +306,8 @@ flowchart LR
     E --> R
     W --> R
     T[truth: stored or --truth file] --> R
+    A -->|flagged annotators excluded| X[export<br/>votes per pair, filters,<br/>hash splits]
+    X --> D[DPO / KTO / RM JSONL<br/>+ dataset card with sha256]
 ```
 
 | Module | Responsibility |
@@ -258,7 +322,7 @@ flowchart LR
 | `aggregate/bootstrap.py` | prompt or judgment resampling, percentile intervals, rank intervals |
 | `aggregate/winrate.py` | empirical and model-implied win-rate matrices |
 | `ranking.py` | the `rank` report and Kendall tau |
-| `quality/stats.py` | exact binomial test, Holm-Bonferroni, Wilson interval, normal and chi-square tails |
+| `quality/stats.py` | exact two-sided and one-sided binomial tests, Holm-Bonferroni (over tested annotators only), Wilson interval, normal and chi-square tails |
 | `quality/position.py` | per-annotator and pooled position-bias tests |
 | `quality/logistic.py` | Newton/IRLS logistic regression, likelihood-ratio test, separation detection |
 | `quality/length.py` | length-bias regression with a leave-one-annotator-out quality covariate |
@@ -268,6 +332,10 @@ flowchart LR
 | `quality/transitivity.py` | preference digraphs, iterative Tarjan SCC, 3-cycle counts, random-orientation baseline |
 | `quality/spam.py` | gold accuracy with Wilson bounds, Dawid-Skene EM, spammer score |
 | `quality/report.py` | `AuditConfig`, `AuditReport` and the `audit` renderer |
+| `export/votes.py` | votes per canonical pair and the filter pipeline with drop reasons |
+| `export/writers.py` | DPO, KTO and RM rows, salted-hash prompt splits, byte-stable JSONL |
+| `export/card.py` | the dataset card (JSON and Markdown) |
+| `export/run.py` | `export_dataset`: select, write, then hash into the card |
 | `cli.py` | Typer commands |
 
 ## Measured numbers
@@ -277,12 +345,14 @@ laptop, Python 3.12).
 
 | What | Result | Reproduce |
 | --- | --- | --- |
-| Tests | 441 passed | `make cov` |
-| Branch coverage | 99.91% (gate: 85%) | `make cov` |
+| Tests | 476 passed | `make cov` |
+| Branch coverage | 99.87% (gate: 85%) | `make cov` |
 | Ranking recovery on the bundled sample | Kendall tau 1.000 for Bradley-Terry and for Elo | `make demo` |
 | Annotator checks on the bundled sample | flag exactly `ann-10` (planted left_biased) and `ann-11` (planted length_biased) | `make demo` |
 | Audit on the bundled sample | flags exactly `ann-06`, `ann-08`, `ann-10`, `ann-11` (the four planted annotators); `--strict` exits 1 | `make demo` |
-| End-to-end demo wall time | 3.4 to 3.7 s over two runs (now including two audits) | `time make demo` |
+| Export on the bundled sample | 142 of 160 pairs kept, the four flagged annotators left out; 116/7/19 DPO rows in train/validation/test; a second export byte-identical | `make demo` |
+| End-to-end demo wall time | 5.7 s over two runs (now including two audits and four exports) | `time make demo` |
+| One `export` on the sample, audit included | about 0.7 s | `time uv run prefpairs export --db .prefpairs/demo.db --out /tmp/x` (after `make demo`) |
 | One `rank` with 500 bootstrap replicates | about 0.2 s | `time uv run prefpairs rank --db .prefpairs/demo.db` (after `make demo`) |
 | One `checks` on the sample (672 judgments) | about 0.3 s | `time uv run prefpairs checks --db .prefpairs/demo.db` (after `make demo`) |
 | One `audit` on the sample | about 0.5 s | `time uv run prefpairs audit --db .prefpairs/demo.db` (after `make demo`) |
@@ -509,8 +579,6 @@ Not built yet, in the order of [PLAN.md](PLAN.md):
 
 - **Collection (slice 5):** a seeded pair scheduler with control and gold
   injection, a terminal `annotate` loop and a small server-rendered web UI.
-- **Export (slice 6):** vote aggregation with filters, DPO, KTO and
-  reward-model JSONL with leak-free prompt-level splits, and a dataset card.
 - **Packaging (rest of slice 7):** a compose file with the web UI and a
   pipeline service.
 - **Benchmarks and docs (slice 8):** recovery versus judgment budget, interval

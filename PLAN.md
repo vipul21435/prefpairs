@@ -259,7 +259,7 @@ Commits:
 4. `test(collect)`: round-trip test that judgments collected through the web
    flow feed `audit` and `rank` unchanged.
 
-### Slice 6: Export to DPO, KTO and reward-model datasets with a dataset card
+### Slice 6: Export to DPO, KTO and reward-model datasets with a dataset card [x] done
 
 Goal: produce training-ready data: aggregate votes per pair from unflagged annotators, apply filters (minimum votes, minimum agreement, exclude flagged annotators, drop ties), write DPO (prompt/chosen/rejected), KTO (desirable/undesirable) and reward-model JSONL with deterministic prompt-level train/validation/test splits, and emit a dataset card with provenance, filter settings, quality statistics and file checksums.
 
@@ -273,6 +273,29 @@ Commits:
    annotator and quality summary, ranking snapshot and sha256 of every file.
 4. `feat(cli)`: `prefpairs export --format dpo|kto|rm`; golden-file tests on a
    small fixed simulated dataset.
+
+Done, with these decisions:
+
+- A vote is one non-skip judgment on the canonical (id-sorted) pair; the
+  winner is the response with more votes, equal decisive counts are a tie, and
+  agreement is the winner's share of counted votes with ties in the
+  denominator. Votes from excluded annotators are counted apart and never
+  decide a pair. Only regular pairs are data by default.
+- Every pair gets a decision with all its drop reasons (`no_votes`,
+  `too_few_votes`, `tie`, `low_agreement`), so the card counts can be
+  recomputed from the decisions.
+- Splits are per prompt: `sha256(salt:prompt_id)` read as a number in [0, 1)
+  against the cumulative fractions, so adding data never moves a prompt and
+  reruns are byte-identical. JSONL has sorted keys and stable row order.
+- KTO labels each response by the kept pairs it won and lost and leaves out a
+  response with as many wins as losses; RM rows keep the canonical pair with
+  the soft label `p_a` (tie votes count half), so ties can be kept for it.
+- `prefpairs export` runs the default audit and excludes every flagged
+  annotator unless `--no-audit`; the card records which annotators were left
+  out and why. The card has no timestamp so it is reproducible too.
+- Golden-file tests use the bundled sample (142 of 160 pairs kept, the four
+  planted annotators excluded) and a rerun byte comparison of every file and
+  card; `make demo` exports all three formats and repeats the DPO export.
 
 ### Slice 7: Docker, compose and end-to-end `make demo` [~] partly done
 
