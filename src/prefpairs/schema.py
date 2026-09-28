@@ -335,11 +335,11 @@ RECORD_KINDS: dict[str, type[AnyRecord]] = {
     "pairwise": PairwiseJudgment,
     "ranked": RankedJudgment,
 }
-"""JSONL ``kind`` tag for each record type, in dependency (insertion) order."""
+"""JSONL ``type`` tag for each record kind, in dependency (insertion) order."""
 
 
 def record_kind(record: AnyRecord) -> str:
-    """The JSONL ``kind`` tag of a record."""
+    """The JSONL ``type`` tag of a record."""
     for kind, cls in RECORD_KINDS.items():
         if type(record) is cls:
             return kind

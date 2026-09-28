@@ -73,7 +73,7 @@ class TestCanonicalLabel:
 
 
 class TestIdentifiersAndText:
-    @pytest.mark.parametrize("bad_id", ["", " p1", "p 1", "-p1", "p/1", "pé1", "x" * 129])
+    @pytest.mark.parametrize("bad_id", ["", " p1", "p 1", "-p1", "p/1", "p\u00e91", "x" * 129])
     def test_rejects_malformed_ids(self, bad_id: str) -> None:
         with pytest.raises(ValidationError):
             Prompt(id=bad_id, text="hello")
