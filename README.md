@@ -607,6 +607,16 @@ Not built yet, in the order of [PLAN.md](PLAN.md):
   sample, `uv run prefpairs rank --db .prefpairs/demo.db --level response
   --replicates 20` took 13 to 19 s over two runs, so a sparse fit is planned.
 
+## Related tools
+
+- [judgebias](https://github.com/vipul21435/judgebias): audit an LLM judge for position bias, length bias, self-preference and agreement with human labels.
+- [rubricops](https://github.com/vipul21435/rubricops): versioned weighted rubrics, a primary review, QA audit and adjudication pipeline, and inter-rater agreement with bootstrap confidence intervals.
+- [datasieve](https://github.com/vipul21435/datasieve): validate and deduplicate LLM training data (SFT and preference records) from one declarative pipeline spec.
+- [evalstats](https://github.com/vipul21435/evalstats): error bars, paired comparisons and sample-size planning for model evaluations scored per item.
+- [sftlint](https://github.com/vipul21435/sftlint): a linter for chat, SFT and tool-calling datasets.
+
+The full list is on the author's profile: https://github.com/vipul21435
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
